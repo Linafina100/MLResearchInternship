@@ -1,62 +1,89 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
+import seaborn as sns
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, ConfusionMatrixDisplay
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-# Load the LARGE dataset
-df = pd.read_csv("stena_training_data.csv")
-
-# Function to calculate dV/dQ (Feature Engineering)
-def calculate_dvdq(data):
-    data = data.sort_values("Time [s]")
-    data['Voltage_Smooth'] = savgol_filter(data['Voltage [V]'], window_length=11, polyorder=3)
-    dV = np.diff(data['Voltage_Smooth'])
-    dQ = np.diff(data['Capacity [A.h]'])
-    dQ[dQ == 0] = 1e-9
-    data['dVdQ'] = np.insert(np.abs(dV / dQ), 0, 0)
-    return data
-
-# Function to extract exactly 15 features
-def extract_15_features(data, num_steps=15):
-    capacity_min = data['Capacity [A.h]'].min()
-    capacity_max = data['Capacity [A.h]'].max()
-    target_capacities = np.linspace(capacity_min, capacity_max, num_steps)
-    return np.interp(target_capacities, data['Capacity [A.h]'], data['dVdQ'])
-
-# Process EACH battery individually
-X = []
-y = []
-
-print("Processing feature extraction for 100 batteries...")
-# Group by the unique Battery_ID we created in the generation script
-for battery_id, battery_data in df.groupby('Battery_ID'):
-    processed_data = calculate_dvdq(battery_data.copy())
-    features = extract_15_features(processed_data)
+def run_ml_pipeline(input_csv):
+    print(f"Loading feature data from {input_csv}...\n")
+    df = pd.read_csv(input_csv)
     
-    X.append(features)
-    # The chemistry is the same for all rows of a specific battery, so we just take the first one
-    y.append(battery_data['Chemistry'].iloc[0])
+    # Identify all columns containing the dV/dQ steps
+    feature_cols = [col for col in df.columns if col.startswith('dV_dQ_step_')]
+    
+    X = df[feature_cols]
+    y = df['Chemistry']
+    
+    # Convert text labels (LFP, NMC) to numeric (0, 1)
+    le = LabelEncoder()
+    y_encoded = le.fit_transform(y)
+    
+    # 80/20 Train-Test Split (as described in the article)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y_encoded, test_size=0.2, random_state=42
+    )
+    
+    # Standardization (Scaling)
+    # Extremely important for SVM, as it relies on distances between data points
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # Define the models we want to compare
+    models = {
+        "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+        "SVM": SVC(kernel='rbf', random_state=42),
+        "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42)
+    }
+    
+    # Train and evaluate each model
+    print("-" * 40)
+    print("MODEL EVALUATION (Accuracy)")
+    print("-" * 40)
+    
+    best_model_name = ""
+    best_accuracy = 0
+    best_model = None
+    accuracies = {}
+    
+    for name, model in models.items():
+        # Train the model on the scaled training data
+        model.fit(X_train_scaled, y_train)
+        
+        # Make predictions on the test data
+        y_pred = model.predict(X_test_scaled)
+        
+        # Calculate accuracy
+        acc = accuracy_score(y_test, y_pred)
+        accuracies[name] = acc
+        print(f"{name:<20}: {acc*100:.2f}%")
+        
+        # Save the best performing model
+        if acc > best_accuracy:
+            best_accuracy = acc
+            best_model_name = name
+            best_model = model
 
-X = np.array(X)
-y = np.array(y)
+    print("-" * 40)
+    print(f"BEST MODEL: {best_model_name} with {best_accuracy*100:.2f}%\n")
+    
+    # Show a detailed report for the winning model
+    print(f"Detailed report for {best_model_name}:")
+    y_pred_best = best_model.predict(X_test_scaled)
+    print(classification_report(y_test, y_pred_best, target_names=le.classes_))
+    
+    # Confusion Matrix for the best model
+    cm = confusion_matrix(y_test, y_pred_best)
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=le.classes_, yticklabels=le.classes_)
+    plt.title(f'Confusion Matrix: {best_model_name}')
+    plt.ylabel('Actual Chemistry')
+    plt.xlabel('Predicted Chemistry')
+    plt.show()
 
-# Split data into Training (80%) and Testing (20%)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Train the Random Forest model
-print("Training the AI model...")
-rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
-rf_model.fit(X_train, y_train)
-
-# Evaluate the model on the unseen test data
-y_pred = rf_model.predict(X_test)
-print("\nClassification Report:\n")
-print(classification_report(y_test, y_pred))
-
-# Plot Confusion Matrix
-ConfusionMatrixDisplay.from_predictions(y_test, y_pred, cmap='Blues')
-plt.title("Confusion Matrix: LFP vs NMC")
-plt.show()
+if __name__ == "__main__":
+    # Run the pipeline
+    run_ml_pipeline("ml_features_data.csv")
