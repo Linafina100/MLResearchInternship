@@ -3,7 +3,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
@@ -34,10 +36,11 @@ def run_ml_pipeline(input_csv):
     
     # Define the models we want to compare
     models = {
-        "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
-        "SVM": SVC(kernel='rbf', random_state=42),
-        "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42)
-    }
+    "Support Vector Classifier": SVC(kernel='rbf', random_state=42),
+    "Decision Tree": DecisionTreeClassifier(random_state=42),
+    "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+    "Logistic Regression": LogisticRegression(random_state=42)
+}
     
     # Train and evaluate each model
     print("-" * 40)
@@ -59,7 +62,7 @@ def run_ml_pipeline(input_csv):
         # Calculate accuracy
         acc = accuracy_score(y_test, y_pred)
         accuracies[name] = acc
-        print(f"{name:<20}: {acc*100:.2f}%")
+        print(f"{name:<28}: {acc*100:.2f}%")
         
         # Save the best performing model
         if acc > best_accuracy:
