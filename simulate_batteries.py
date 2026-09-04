@@ -20,7 +20,7 @@ experiment = pybamm.Experiment([
 sim_lfp = pybamm.Simulation(model, parameter_values=param_lfp, experiment=experiment)
 sim_nmc = pybamm.Simulation(model, parameter_values=param_nmc, experiment=experiment)
 
-# 5. Run the simulations
+# Run the simulations
 print("Simulating LFP...")
 solution_lfp = sim_lfp.solve()
 
