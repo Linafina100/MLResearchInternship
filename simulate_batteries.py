@@ -35,9 +35,10 @@ print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
 for mult in capacity_multipliers:
     for i in range(variations_per_size):
-        # Generate random SOC (50% to 100%) and SOH (80% to 100%)
-        soc = random.uniform(0.5, 1.0)
-        soh = random.uniform(0.8, 1.0)
+        # SOC is set to 100% for now
+        # Generate SOH (75% to 85%)
+        soc = 1.0
+        soh = random.uniform(0.75, 0.85)
         
         print(f"\n--- Size: {mult}x | Variation {i+1}/{variations_per_size} | SOC: {soc:.2f} | SOH: {soh:.2f} ---")
         
@@ -50,9 +51,13 @@ for mult in capacity_multipliers:
             param["Negative electrode thickness [m]"] *= mult
             param["Positive electrode thickness [m]"] *= mult
             
-            # Apply Aging/SOH (Reduce maximum lithium concentration)
+            # 1. Capacity loss (LAM): reduce max lithium concentration
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
+
+            # 2. Resistance growth: decrease electrode conductivity as SOH decreases
+            param["Negative electrode conductivity [S.m-1]"] *= soh
+            param["Positive electrode conductivity [S.m-1]"] *= soh
             
         # Build Simulations
         sim_lfp = pybamm.Simulation(model, parameter_values=param_lfp, experiment=pulse_experiment)
