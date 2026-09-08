@@ -72,8 +72,30 @@ def solve_with_cutoff(sim, initial_soc, chem, n_steps):
     return sol
 
 
-# Multipliers for battery capacity sizing (~1.2Ah, ~2.0Ah, ~3.5Ah)
-capacity_multipliers = [0.6, 1.0, 1.75]
+# Target cell capacities from the article (Sec. 3): "the electrode geometries
+# are adjusted to different capacities for training purposes, i.e., 1.2 Ah,
+# 2 Ah, and 3.5 Ah, covering the common capacity range of 18650 cells."
+# LFP (Prada2013, base ~2.3 Ah) and NMC (Chen2020, base ~5.0 Ah) have very
+# different base capacities, so a single shared thickness multiplier does not
+# land both chemistries on the same target capacity. Instead, a per-chemistry
+# multiplier is derived from each base parameter set's own declared
+# "Nominal cell capacity [A.h]", so that both chemistries actually reach
+# ~1.2/2.0/3.5 Ah at each size step, keeping capacity itself uninformative
+# about chemistry (as intended by the article).
+CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
+
+
+def capacity_multipliers_for(base_params, targets_ah):
+    """Per-chemistry thickness multipliers that scale a base parameter set's
+    own nominal capacity onto each of the target capacities."""
+    base_capacity_ah = base_params["Nominal cell capacity [A.h]"]
+    return [target_ah / base_capacity_ah for target_ah in targets_ah]
+
+
+capacity_multipliers = {
+    "LFP": capacity_multipliers_for(param_lfp_base, CAPACITY_TARGETS_AH),
+    "NMC": capacity_multipliers_for(param_nmc_base, CAPACITY_TARGETS_AH),
+}
 
 # How many random variations to run per battery size
 # Keep this low (e.g., 2) while testing, increase to generate massive datasets later
@@ -83,31 +105,32 @@ all_data = []
 
 print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
-for mult in capacity_multipliers:
+for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
         # Generate random SOC (50% to 100%) and SOH (80% to 100%)
         soc = random.uniform(0.5, 1.0)
         soh = random.uniform(0.8, 1.0)
 
-        print(f"\n--- Size: {mult}x | Variation {i+1}/{variations_per_size} | SOC: {soc:.2f} | SOH: {soh:.2f} ---")
+        print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | SOC: {soc:.2f} | SOH: {soh:.2f} ---")
 
         # Create clean parameter copies
         param_lfp = param_lfp_base.copy()
         param_nmc = param_nmc_base.copy()
 
-        # Apply Capacity Scaling (Electrode thickness)
-        for param in [param_lfp, param_nmc]:
+        chemistries = {
+            "LFP": param_lfp,
+            "NMC": param_nmc,
+        }
+
+        # Apply per-chemistry Capacity Scaling (Electrode thickness) and Aging/SOH
+        for chem, param in chemistries.items():
+            mult = capacity_multipliers[chem][size_idx]
             param["Negative electrode thickness [m]"] *= mult
             param["Positive electrode thickness [m]"] *= mult
 
             # Apply Aging/SOH (Reduce maximum lithium concentration)
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
-
-        chemistries = {
-            "LFP": param_lfp,
-            "NMC": param_nmc,
-        }
 
         for n_steps in STEP_COUNTS:
             for chem, param in chemistries.items():
@@ -131,7 +154,8 @@ for mult in capacity_multipliers:
                     "Voltage [V]": voltage_with_noise,
                     "Capacity [A.h]": sol["Discharge capacity [A.h]"].entries,
                     "Chemistry": chem,
-                    "Size_Multiplier": mult,
+                    "Target_Capacity_Ah": target_ah,
+                    "Size_Multiplier": capacity_multipliers[chem][size_idx],
                     "SOH": round(soh, 3),
                     "Initial_SOC": round(soc, 3),
                     "N_Steps": n_steps,
