@@ -190,4 +190,9 @@ plt.xlabel('Time [Hours]')
 plt.ylabel('Voltage [V]')
 plt.legend()
 plt.grid(True)
+
+plot_file = "pulse_discharge_plot.png"
+plt.savefig(plot_file, dpi=150)
+print(f"Plot saved to '{plot_file}'")
+
 plt.show()
