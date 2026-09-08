@@ -110,12 +110,13 @@ print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
-        # Generate random SOC (50% to 100%) and SOH (80% to 100%)
-        soc = random.uniform(0.5, 1.0)
-        soh = random.uniform(0.8, 1.0)
-
-        print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | SOC: {soc:.2f} | SOH: {soh:.2f} ---")
-
+        # SOC is set to 100% for now
+        # Generate SOH (75% to 85%)
+        soc = 1.0
+        soh = random.uniform(0.75, 0.85)
+        
+        print(f"\n--- Size: {mult}x | Variation {i+1}/{variations_per_size} | SOC: {soc:.2f} | SOH: {soh:.2f} ---")
+        
         # Create clean parameter copies
         param_lfp = param_lfp_base.copy()
         param_nmc = param_nmc_base.copy()
@@ -130,41 +131,43 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             mult = capacity_multipliers[chem][size_idx]
             param["Negative electrode thickness [m]"] *= mult
             param["Positive electrode thickness [m]"] *= mult
-
-            # Apply Aging/SOH (Reduce maximum lithium concentration)
+            
+            # 1. Capacity loss (LAM): reduce max lithium concentration
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
 
-        for n_steps in STEP_COUNTS:
-            for chem, param in chemistries.items():
-                v_min = LOWER_VOLTAGE_CUTOFF[chem]
-                pulse_experiment = make_pulse_experiment(n_steps, v_min)
-                sim = pybamm.Simulation(model, parameter_values=param, experiment=pulse_experiment)
-
-                pulse_ma = pulse_current_ma(n_steps)
-                print(f"Solving {chem} ({n_steps} steps, I={pulse_ma:.4g} mA, Vmin={v_min} V)...")
-                sol = solve_with_cutoff(sim, soc, chem, n_steps)
-                if sol is None:
-                    print(f"  Skipping {chem} ({n_steps} steps): no solution data.")
-                    continue
-
-                raw_voltage = sol["Terminal voltage [V]"].entries
-                noise = np.random.normal(0, 0.001, len(raw_voltage))
-                voltage_with_noise = raw_voltage + noise
-
-                df = pd.DataFrame({
-                    "Time [s]": sol["Time [s]"].entries,
-                    "Voltage [V]": voltage_with_noise,
-                    "Capacity [A.h]": sol["Discharge capacity [A.h]"].entries,
-                    "Chemistry": chem,
-                    "Target_Capacity_Ah": target_ah,
-                    "Size_Multiplier": capacity_multipliers[chem][size_idx],
-                    "SOH": round(soh, 3),
-                    "Initial_SOC": round(soc, 3),
-                    "N_Steps": n_steps,
-                    "V_min [V]": v_min,
-                })
-                all_data.append(df)
+            # 2. Resistance growth: decrease electrode conductivity as SOH decreases
+            param["Negative electrode conductivity [S.m-1]"] *= soh
+            param["Positive electrode conductivity [S.m-1]"] *= soh
+            
+        # Build Simulations
+        sim_lfp = pybamm.Simulation(model, parameter_values=param_lfp, experiment=pulse_experiment)
+        sim_nmc = pybamm.Simulation(model, parameter_values=param_nmc, experiment=pulse_experiment)
+        
+        # Solve with random starting SOC
+        print("Solving LFP...")
+        # Note: initial_soc tells the model how full it is before starting the experiment
+        sol_lfp = sim_lfp.solve(initial_soc=soc) 
+        
+        print("Solving NMC...")
+        sol_nmc = sim_nmc.solve(initial_soc=soc)
+        
+        # Extract data and apply Gaussian noise (standard deviation = 0.001)
+        for chem, sol in [("LFP", sol_lfp), ("NMC", sol_nmc)]:
+            raw_voltage = sol["Terminal voltage [V]"].entries
+            noise = np.random.normal(0, 0.001, len(raw_voltage))
+            voltage_with_noise = raw_voltage + noise
+            
+            df = pd.DataFrame({
+                "Time [s]": sol["Time [s]"].entries,
+                "Voltage [V]": voltage_with_noise,
+                "Capacity [A.h]": sol["Discharge capacity [A.h]"].entries,
+                "Chemistry": chem,
+                "Size_Multiplier": mult,
+                "SOH": round(soh, 3),
+                "Initial_SOC": round(soc, 3)
+            })
+            all_data.append(df)
 
 # Combine and save
 training_data = pd.concat(all_data)
