@@ -11,29 +11,104 @@ model = pybamm.lithium_ion.SPM()
 param_lfp_base = pybamm.ParameterValues("Prada2013")
 param_nmc_base = pybamm.ParameterValues("Chen2020")
 
-# Define the Pulse Discharge Experiment based on the article
-# 15 steps of: 30 min discharge at 80 mA, followed by 1 hour of rest.
-pulse_experiment = pybamm.Experiment(
-    [
-        (
-            "Discharge at 80 mA for 30 minutes",
-            "Rest for 1 hour"
-        )
-    ] * 15
-)
+# Pulse discharge (GITT) from the article, green/yellow identification interval:
+# total discharged capacity is fixed at ΔQ = 0.6 Ah (half of the assumed
+# minimum 18650 capacity of 1.2 Ah), independent of the actual cell size,
+# each pulse lasts 0.5 h and is followed by a 1 h rest. The per-step current
+# is I = 0.6 Ah / n_steps / 0.5 h, which reproduces the article's stated
+# value of 80 mA for 15 steps, and gives 240/120/60/48 mA for 5/10/20/25
+# steps respectively. All of these are <=0.2C for the smallest (1.2 Ah)
+# reference cell, i.e. "generally small values" as required by the article
+# so the terminal voltage stays inside the feasible green/yellow measurement
+# zone ([max(Vmin)-0.2V, min(Vmax)+0.2V] = [2.3V, 3.8V] for LFP/NMC, Sec. 2)
+# instead of overshooting into the orange/red (deep-discharge/overcharge)
+# zones during a pulse.
+# Nominal lower voltage limits (article Sec. 2): LFP 2.0 V, NMC 2.5 V.
+TOTAL_PULSE_CAPACITY_AH = 0.6
+PULSE_DURATION = "30 minutes"
+PULSE_DURATION_HOURS = 0.5
+REST_DURATION = "1 hour"
+LOWER_VOLTAGE_CUTOFF = {
+    "LFP": 2.0,
+    "NMC": 2.5,
+}
+STEP_COUNTS = [5, 10, 15, 20, 25]
 
-# Multipliers for battery capacity sizing (~1.2Ah, ~2.0Ah, ~3.5Ah)
-capacity_multipliers = [0.6, 1.0, 1.75]
 
-# How many random variations to run per battery size
-# Keep this low (e.g., 2) while testing, increase to generate massive datasets later
-variations_per_size = 2 
+def pulse_current_ma(n_steps):
+    """Per-pulse current [mA] so n_steps pulses discharge the fixed total
+    of TOTAL_PULSE_CAPACITY_AH, per the article's GITT protocol."""
+    return TOTAL_PULSE_CAPACITY_AH / n_steps / PULSE_DURATION_HOURS * 1000
+
+
+def make_pulse_experiment(n_steps, v_min):
+    """Build a GITT discharge experiment with n pulse/rest cycles."""
+    pulse_current = f"{pulse_current_ma(n_steps):.4g} mA"
+    return pybamm.Experiment(
+        [
+            (
+                f"Discharge at {pulse_current} for {PULSE_DURATION} or until {v_min} V",
+                f"Rest for {REST_DURATION}",
+            )
+        ]
+        * n_steps
+    )
+
+
+def solve_with_cutoff(sim, initial_soc, chem, n_steps):
+    """Solve an experiment; keep partial results if the voltage cut-off is hit."""
+    try:
+        sol = sim.solve(initial_soc=initial_soc)
+    except pybamm.SolverError as err:
+        sol = getattr(sim, "solution", None)
+        print(f"  {chem} ({n_steps} steps): solver stopped early ({err})")
+        if sol is None or len(sol.t) == 0:
+            return None
+
+    termination = getattr(sol, "termination", None)
+    if termination and termination != "final time":
+        print(f"  {chem} ({n_steps} steps): terminated early ({termination})")
+
+    return sol
+
+
+# Target cell capacities from the article (Sec. 3): "the electrode geometries
+# are adjusted to different capacities for training purposes, i.e., 1.2 Ah,
+# 2 Ah, and 3.5 Ah, covering the common capacity range of 18650 cells."
+# LFP (Prada2013, base ~2.3 Ah) and NMC (Chen2020, base ~5.0 Ah) have very
+# different base capacities, so a single shared thickness multiplier does not
+# land both chemistries on the same target capacity. Instead, a per-chemistry
+# multiplier is derived from each base parameter set's own declared
+# "Nominal cell capacity [A.h]", so that both chemistries actually reach
+# ~1.2/2.0/3.5 Ah at each size step, keeping capacity itself uninformative
+# about chemistry (as intended by the article).
+CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
+
+
+def capacity_multipliers_for(base_params, targets_ah):
+    """Per-chemistry thickness multipliers that scale a base parameter set's
+    own nominal capacity onto each of the target capacities."""
+    base_capacity_ah = base_params["Nominal cell capacity [A.h]"]
+    return [target_ah / base_capacity_ah for target_ah in targets_ah]
+
+
+capacity_multipliers = {
+    "LFP": capacity_multipliers_for(param_lfp_base, CAPACITY_TARGETS_AH),
+    "NMC": capacity_multipliers_for(param_nmc_base, CAPACITY_TARGETS_AH),
+}
+
+# How many random variations to run per battery size. The article (Sec. 3)
+# generates 250 individual OCV samples per chemistry for each tested
+# capacity/step configuration. With 2 chemistries (LFP, NMC) and 3 capacity
+# sizes here, variations_per_size = 83 gives 3*83 = 249 samples per chemistry,
+# matching that target (~10 min runtime measured for the full sweep).
+variations_per_size = 83
 
 all_data = []
 
 print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
-for mult in capacity_multipliers:
+for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
         # SOC is set to 100% for now
         # Generate SOH (75% to 85%)
@@ -45,9 +120,15 @@ for mult in capacity_multipliers:
         # Create clean parameter copies
         param_lfp = param_lfp_base.copy()
         param_nmc = param_nmc_base.copy()
-        
-        # Apply Capacity Scaling (Electrode thickness)
-        for param in [param_lfp, param_nmc]:
+
+        chemistries = {
+            "LFP": param_lfp,
+            "NMC": param_nmc,
+        }
+
+        # Apply per-chemistry Capacity Scaling (Electrode thickness) and Aging/SOH
+        for chem, param in chemistries.items():
+            mult = capacity_multipliers[chem][size_idx]
             param["Negative electrode thickness [m]"] *= mult
             param["Positive electrode thickness [m]"] *= mult
             
