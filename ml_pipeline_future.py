@@ -230,7 +230,7 @@ def run_ml_pipeline(
 
 if __name__ == "__main__":
     # Standard training mode:
-    run_ml_pipeline(synthetic_csv="ml_features_data.csv")
+    run_ml_pipeline(synthetic_csv="ml_features_25_steps9599.csv") #update for every step count and SOC
     
     # Future real-world validation mode (uncomment when factory test data is ready):
     # run_ml_pipeline(
