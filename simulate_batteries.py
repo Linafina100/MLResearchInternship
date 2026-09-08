@@ -110,9 +110,10 @@ print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
-        # Generate random SOC (50% to 100%) and SOH (80% to 100%)
-        soc = random.uniform(0.5, 1.0)
-        soh = random.uniform(0.8, 1.0)
+        # SOC is fixed at 100% for now; SOH is randomized over a narrower
+        # 75-85% aged range (per teammate update in ella_branch)
+        soc = 1.0
+        soh = random.uniform(0.75, 0.85)
 
         print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | SOC: {soc:.2f} | SOH: {soh:.2f} ---")
 
@@ -131,9 +132,13 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             param["Negative electrode thickness [m]"] *= mult
             param["Positive electrode thickness [m]"] *= mult
 
-            # Apply Aging/SOH (Reduce maximum lithium concentration)
+            # 1. Capacity loss (LAM): reduce max lithium concentration
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
+
+            # 2. Resistance growth: decrease electrode conductivity as SOH decreases
+            param["Negative electrode conductivity [S.m-1]"] *= soh
+            param["Positive electrode conductivity [S.m-1]"] *= soh
 
         for n_steps in STEP_COUNTS:
             for chem, param in chemistries.items():
