@@ -97,9 +97,12 @@ capacity_multipliers = {
     "NMC": capacity_multipliers_for(param_nmc_base, CAPACITY_TARGETS_AH),
 }
 
-# How many random variations to run per battery size
-# Keep this low (e.g., 2) while testing, increase to generate massive datasets later
-variations_per_size = 2
+# How many random variations to run per battery size. The article (Sec. 3)
+# generates 250 individual OCV samples per chemistry for each tested
+# capacity/step configuration. With 2 chemistries (LFP, NMC) and 3 capacity
+# sizes here, variations_per_size = 83 gives 3*83 = 249 samples per chemistry,
+# matching that target (~10 min runtime measured for the full sweep).
+variations_per_size = 83
 
 all_data = []
 
