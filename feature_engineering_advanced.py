@@ -7,8 +7,13 @@ def create_features_by_steps(input_csv, step_counts=[5, 10, 15, 20, 25]):
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
     
-    # Group each independent simulation run
-    groupby_cols = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'N_Steps']
+    # Group each independent simulation run. Variation_ID is included because
+    # SOH is stored rounded to 3 decimals, so two distinct random variations
+    # (drawn independently per size in simulate_batteries.py) can round to the
+    # identical SOH -- without Variation_ID those would silently collide into
+    # the same Battery_ID, merging two unrelated runs' overlapping timestamps
+    # together and corrupting both their features.
+    groupby_cols = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'N_Steps', 'Variation_ID']
     df['Battery_ID'] = df.groupby(groupby_cols).ngroup()
     
     all_features = []
