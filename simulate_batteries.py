@@ -4,6 +4,14 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
+# Fixed seed so a generation run (including which random SOH/size draws, if
+# any, fail to solve) is reproducible run-to-run instead of silently varying
+# every time, which previously made sample-count deficits impossible to
+# investigate after the fact.
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
+
 # Select the mathematical model (SPM)
 model = pybamm.lithium_ion.SPM()
 
@@ -55,15 +63,43 @@ def make_pulse_experiment(n_steps, v_min):
     )
 
 
-def solve_with_cutoff(sim, initial_soc, chem, n_steps):
-    """Solve an experiment; keep partial results if the voltage cut-off is hit."""
+# Collects every solve failure (which chemistry/step-count/size/SOH, and what
+# exception was raised) so the sample-count deficit between the theoretical
+# chemistries*sizes*variations target and what actually lands in the CSV can
+# be diagnosed after the run instead of only being visible as a missing row.
+FAILURE_LOG = []
+
+
+def solve_with_cutoff(sim, initial_soc, chem, n_steps, context=""):
+    """Solve an experiment; keep partial results if the voltage cut-off is hit.
+
+    Any solve failure is logged (with its exception type) and skipped rather
+    than left to propagate. Previously only pybamm.SolverError was caught, so
+    any other exception type raised by sim.solve() (e.g. from an extreme
+    scaled-parameter combination) would crash the entire generation run
+    without a trace, silently losing every remaining (chemistry, n_steps)
+    attempt for that variation.
+    """
     try:
         sol = sim.solve(initial_soc=initial_soc)
     except pybamm.SolverError as err:
         sol = getattr(sim, "solution", None)
-        print(f"  {chem} ({n_steps} steps): solver stopped early ({err})")
-        if sol is None or len(sol.t) == 0:
+        recovered = sol is not None and len(sol.t) > 0
+        print(f"  {chem} ({n_steps} steps){context}: solver stopped early [SolverError] "
+              f"({'partial data kept' if recovered else 'no data'}) ({err})")
+        FAILURE_LOG.append({
+            "Chemistry": chem, "N_Steps": n_steps, "Context": context,
+            "ExceptionType": "SolverError", "Message": str(err), "Recovered": recovered,
+        })
+        if not recovered:
             return None
+    except Exception as err:
+        print(f"  {chem} ({n_steps} steps){context}: solve failed [{type(err).__name__}] ({err})")
+        FAILURE_LOG.append({
+            "Chemistry": chem, "N_Steps": n_steps, "Context": context,
+            "ExceptionType": type(err).__name__, "Message": str(err), "Recovered": False,
+        })
+        return None
 
     termination = getattr(sol, "termination", None)
     if termination and termination != "final time":
@@ -115,6 +151,18 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         soc = 1.0
         soh = random.uniform(0.75, 0.85)
 
+        # Globally unique id for this (size, variation) draw. SOH is stored
+        # rounded to 3 decimals, and with 83 random draws per size from only
+        # ~101 possible rounded values, collisions are near-certain (birthday
+        # paradox) -- two *different* variations can round to the identical
+        # SOH, and since Initial_SOC and Size_Multiplier are otherwise
+        # constant per size, that made them indistinguishable to every
+        # downstream (Chemistry, Size_Multiplier, SOH, Initial_SOC) groupby,
+        # silently merging independent simulation runs into one battery
+        # group. Variation_ID is unaffected by any rounding and guarantees
+        # each (size, i) draw stays its own identity everywhere downstream.
+        variation_id = size_idx * variations_per_size + i
+
         print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | SOC: {soc:.2f} | SOH: {soh:.2f} ---")
 
         # Create clean parameter copies
@@ -148,7 +196,8 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
 
                 pulse_ma = pulse_current_ma(n_steps)
                 print(f"Solving {chem} ({n_steps} steps, I={pulse_ma:.4g} mA, Vmin={v_min} V)...")
-                sol = solve_with_cutoff(sim, soc, chem, n_steps)
+                context = f" [target={target_ah}Ah, variation={i+1}/{variations_per_size}, SOH={soh:.3f}]"
+                sol = solve_with_cutoff(sim, soc, chem, n_steps, context=context)
                 if sol is None:
                     print(f"  Skipping {chem} ({n_steps} steps): no solution data.")
                     continue
@@ -168,6 +217,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
                     "Initial_SOC": round(soc, 3),
                     "N_Steps": n_steps,
                     "V_min [V]": v_min,
+                    "Variation_ID": variation_id,
                 })
                 all_data.append(df)
 
@@ -176,6 +226,19 @@ training_data = pd.concat(all_data)
 output_file = "advanced_synthetic_battery_data.csv"
 training_data.to_csv(output_file, index=False)
 print(f"\nDone! Data with realistic pulses, SOC, and aging saved to '{output_file}'")
+
+# --- FAILURE SUMMARY ---
+# Surfaces exactly how much of the theoretical chemistries*sizes*variations
+# target was lost to solve failures, and why, instead of that deficit only
+# showing up later as an unexplained gap in the feature-engineered dataset.
+total_attempts = len(CAPACITY_TARGETS_AH) * variations_per_size * len(STEP_COUNTS) * len(LOWER_VOLTAGE_CUTOFF)
+print(f"\n{len(FAILURE_LOG)} of {total_attempts} solve attempts failed.")
+if FAILURE_LOG:
+    failures_df = pd.DataFrame(FAILURE_LOG)
+    print(failures_df["ExceptionType"].value_counts().to_string())
+    failure_log_file = "simulation_failures.csv"
+    failures_df.to_csv(failure_log_file, index=False)
+    print(f"Full failure log saved to '{failure_log_file}'")
 
 # --- PLOTTING ---
 # Plot one LFP and one NMC sample to visualize the pulse discharge

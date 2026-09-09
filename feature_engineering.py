@@ -7,8 +7,11 @@ def create_features(input_csv, output_csv):
     df = pd.read_csv(input_csv)
     
     # Create a unique ID for each simulated battery run
-    # Since we generated multiple sizes and variations, we group them by their unique traits
-    df['Battery_ID'] = df.groupby(['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC']).ngroup()
+    # Since we generated multiple sizes and variations, we group them by their unique traits.
+    # Variation_ID is included because SOH is stored rounded to 3 decimals, so two distinct
+    # random variations can round to the identical SOH and would otherwise silently collide
+    # into the same Battery_ID (see simulate_batteries.py).
+    df['Battery_ID'] = df.groupby(['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']).ngroup()
     
     all_features = []
     
