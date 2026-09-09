@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-def create_features_by_steps(input_csv, step_counts=[5, 10, 15, 20, 25]):
+def create_features_by_soc_bins(input_csv, step_counts=[5, 10, 15, 20, 25]):
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
     
@@ -95,8 +95,6 @@ def create_features_by_steps(input_csv, step_counts=[5, 10, 15, 20, 25]):
                 "cutoff) — a mid-sequence gap would break positional step indexing."
             )
 
-        dvdq_values = (dV[valid] / dQ[valid]).values
-        
         battery_features = {
             'Battery_ID': battery_id,
             'Chemistry': group['Chemistry'].iloc[0],
@@ -106,10 +104,49 @@ def create_features_by_steps(input_csv, step_counts=[5, 10, 15, 20, 25]):
             'Initial_SOC': group['Initial_SOC'].iloc[0],
             'N_Steps': int(group['N_Steps'].iloc[0]),
         }
-        
-        for step_idx, val in enumerate(dvdq_values):
-            battery_features[f'dV_dQ_step_{step_idx+1}'] = val
-            
+
+        # Pre-initialize standard 10% SOC bins (descending, matching discharge
+        # direction) so every battery gets the same uniform column set.
+        soc_bins = [f"dV_dQ_SOC_{round(i / 10, 1):.1f}_{round((i - 1) / 10, 1):.1f}" for i in range(10, 0, -1)]
+        for bin_name in soc_bins:
+            battery_features[bin_name] = np.nan
+
+        # Map each valid dV/dQ transition to the absolute SOC range it ends
+        # in. Phase 1's dV_dQ_step_N was positional (which pulse number),
+        # which real-world truncated discharge data can't reproduce (a
+        # partial factory pull doesn't know it was "pulse 7 of 15"). Absolute
+        # SOC bins are anchored to the battery's actual state of charge
+        # instead, so a truncated real-world trace can be mapped onto the
+        # same feature space as a full synthetic sweep.
+        #
+        # nominal_capacity must be the cell's true capacity (Target_Capacity_Ah),
+        # not group['Capacity [A.h]'].max() -- the GITT protocol only ever
+        # discharges a fixed ~0.6 Ah total regardless of cell size, so using
+        # the observed max as the denominator would incorrectly stretch every
+        # battery's SOC range down to ~0.0 regardless of its actual capacity,
+        # rather than reflecting how far it truly discharged (e.g. a 3.5 Ah
+        # cell discharging 0.6 Ah only drops to about SOC 0.83, not SOC 0.0).
+        nominal_capacity = group['Target_Capacity_Ah'].iloc[0]
+        init_soc = group['Initial_SOC'].iloc[0]
+        for idx in dV[valid].index:
+            dv_val = dV.loc[idx]
+            dq_val = dQ.loc[idx]
+            dvdq = dv_val / dq_val
+
+            # Cumulative discharged capacity at this OCV point
+            cum_capacity = ocv_sequence['Capacity [A.h]'].iloc[idx]
+            current_soc = max(0.0, init_soc - (cum_capacity / nominal_capacity))
+
+            # Map into the nearest 10% bin (bin_high is the SOC this
+            # transition discharged INTO, rounded up to the enclosing decile)
+            bin_high = min(1.0, np.ceil(current_soc * 10) / 10.0)
+            if bin_high <= 0.0:
+                bin_high = 0.1
+            bin_low = round(bin_high - 0.1, 1)
+
+            bin_key = f"dV_dQ_SOC_{bin_high:.1f}_{bin_low:.1f}"
+            battery_features[bin_key] = dvdq
+
         all_features.append(battery_features)
         
     full_df = pd.DataFrame(all_features)
@@ -120,33 +157,32 @@ def create_features_by_steps(input_csv, step_counts=[5, 10, 15, 20, 25]):
     for n in step_counts:
         step_subset = full_df[full_df['N_Steps'] == n].copy()
 
-        # full_df is the union of every battery's dV_dQ_step_* columns across
-        # ALL step counts, so a subset filtered to N_Steps == n still carries
-        # columns beyond n (e.g. dV_dQ_step_6.. for the 5-step subset) that no
-        # 5-step battery could ever populate -- entirely NaN. Left in, these
-        # get silently dropped by SimpleImputer downstream, which desyncs
-        # ml_pipeline_future.py's feature_cols (still listing all of them)
-        # from the model's actual trained input width, corrupting the
-        # feature-importance plot's column lookup and the saved feature list.
-        all_step_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_step_')]
-        empty_step_cols = [c for c in all_step_cols if step_subset[c].isna().all()]
-        step_subset = step_subset.drop(columns=empty_step_cols)
+        # All 10 SOC-bin columns are pre-initialized for every battery
+        # regardless of N_Steps, so a bin is only ever entirely NaN for a
+        # given step count if that protocol's coarser per-pulse capacity
+        # never actually lands a transition inside it -- drop those so
+        # ml_pipeline_future.py's feature_cols stays in sync with the
+        # model's real trained input width (see the analogous issue this
+        # fixed for the old positional dV_dQ_step_* columns).
+        all_soc_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_SOC_')]
+        empty_soc_cols = [c for c in all_soc_cols if step_subset[c].isna().all()]
+        step_subset = step_subset.drop(columns=empty_soc_cols)
 
-        # Find all valid step columns for this step count
-        feat_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_step_')]
+        # Find all valid SOC bin columns for this step count
+        feat_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_SOC_')]
 
         out_name = f"ml_features_{n}_steps.csv"
         step_subset.to_csv(out_name, index=False)
         datasets[n] = step_subset
-        
+
         # Sanity check: count non-null values
         valid_vals = step_subset[feat_cols].notna().sum().sum()
-        print(f"  -> {out_name}: {len(step_subset)} batteries, {len(feat_cols)} step columns, {valid_vals} non-null values")
-        
+        print(f"  -> {out_name}: {len(step_subset)} batteries, {len(feat_cols)} SOC bin columns, {valid_vals} valid entries")
+
     return datasets
 
 
-def plot_all_step_profiles(datasets):
+def plot_all_soc_bin_profiles(datasets):
     step_counts = sorted(datasets.keys())
     fig, axes = plt.subplots(len(step_counts), 1, figsize=(10, 3.5 * len(step_counts)))
     
@@ -168,30 +204,34 @@ def plot_all_step_profiles(datasets):
         nmc_sample = nmc_rows.iloc[0]
         
         # Extract features for this step
-        feature_cols = [c for c in subset.columns if c.startswith('dV_dQ_step_')]
-        
+        feature_cols = [c for c in subset.columns if c.startswith('dV_dQ_SOC_')]
+
         # Convert to numeric vectors
         y_lfp = lfp_sample[feature_cols].astype(float).dropna()
         y_nmc = nmc_sample[feature_cols].astype(float).dropna()
-        
-        x_lfp = [int(col.split('_')[-1]) for col in y_lfp.index]
-        x_nmc = [int(col.split('_')[-1]) for col in y_nmc.index]
-        
+
+        # x-axis is the SOC this bin discharged INTO (the "_high" boundary,
+        # e.g. "dV_dQ_SOC_1.0_0.9" -> 1.0), so points read left-to-right as
+        # discharge progresses once the axis is inverted below.
+        x_lfp = [float(col.split('_')[-2]) for col in y_lfp.index]
+        x_nmc = [float(col.split('_')[-2]) for col in y_nmc.index]
+
         print(f"Plotting {n_steps} steps:")
         print(f"   LFP values: {np.round(y_lfp.values, 3)}")
         print(f"   NMC values: {np.round(y_nmc.values, 3)}")
-        
+
         ax.plot(x_lfp, y_lfp.values, marker='o', label='LFP', color='#1f77b4', linewidth=2, markersize=6)
         ax.plot(x_nmc, y_nmc.values, marker='s', label='NMC', color='#ff7f0e', linewidth=2, markersize=6)
-        
-        ax.set_title(f'GITT Pulse Profile: {n_steps} Steps (ΔQ = {0.6 / n_steps:.3f} Ah / pulse)', fontsize=11, fontweight='bold')
-        ax.set_xlabel('Pulse Step Number')
+
+        ax.set_title(f'GITT Pulse Profile: {n_steps} Steps (Absolute SOC bins)', fontsize=11, fontweight='bold')
+        ax.set_xlabel('State of Charge')
         ax.set_ylabel('dV/dQ [V/Ah]')
-        
-        all_x = sorted(list(set(x_lfp + x_nmc)))
+
+        all_x = sorted(set(x_lfp + x_nmc), reverse=True)
         if all_x:
             ax.set_xticks(all_x)
-            
+        ax.invert_xaxis()  # SOC 1.0 (start of discharge) on the left
+
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.legend()
 
@@ -202,6 +242,6 @@ def plot_all_step_profiles(datasets):
 if __name__ == "__main__":
     input_file = "advanced_synthetic_battery_data.csv"
     step_list = [5, 10, 15, 20, 25]
-    
-    datasets = create_features_by_steps(input_file, step_counts=step_list)
-    plot_all_step_profiles(datasets)
+
+    datasets = create_features_by_soc_bins(input_file, step_counts=step_list)
+    plot_all_soc_bin_profiles(datasets)
