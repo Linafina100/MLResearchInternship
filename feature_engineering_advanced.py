@@ -13,38 +13,83 @@ def create_features_by_steps(input_csv, step_counts=[5, 10, 15, 20, 25]):
     
     all_features = []
     
+    # simulate_batteries.py builds each battery's protocol as N_Steps repeats of
+    # ("Discharge ... for 30 minutes", "Rest for 1 hour") -> exactly 5400 s per
+    # step, independent of N_Steps (only the pulse current changes). PyBaMM
+    # concatenates each named sub-condition's own sub-solution and duplicates
+    # the shared boundary timestamp across the join: once as the trailing point
+    # of the ending condition, once as the leading point of the next. So the
+    # true end-of-relaxation OCV for step k appears at Time == k * STEP_DURATION_S,
+    # recorded TWICE — the first occurrence is the still-relaxed voltage, the
+    # second already reflects the next pulse's abrupt IR-drop as current
+    # switches back on, and must be excluded.
+    #
+    # Sampling *density* between boundaries varies hugely with cell age/size —
+    # a heavily aged cell can be densely sampled throughout its entire pulse
+    # and rest, while a fresh cell needs almost no points once settled — so
+    # neither "capacity is locally flat" nor "the next time gap is unusually
+    # large" reliably distinguishes a genuine step boundary from an ordinary
+    # internal sample (both approaches were tried and broke on real batteries).
+    # The one thing that's always true, regardless of sampling density, is
+    # that a real step boundary sits at an exact multiple of STEP_DURATION_S.
+    PULSE_DURATION_S = 30 * 60   # matches PULSE_DURATION in simulate_batteries.py
+    REST_DURATION_S = 60 * 60    # matches REST_DURATION in simulate_batteries.py
+    STEP_DURATION_S = PULSE_DURATION_S + REST_DURATION_S
+    BOUNDARY_TIME_TOL_S = 0.01   # far above float noise (observed to be exact),
+                                  # far below the >=0.1 s gap to the next real
+                                  # sample after a boundary
+
     for battery_id, group in df.groupby('Battery_ID'):
-        group = group.sort_values('Time [s]').reset_index(drop=True)
-        
-        # In GITT discharge, capacity increases during pulse and stays constant during rest
-        # Capacity delta between consecutive recorded solver points
-        cap_diff = group['Capacity [A.h]'].diff().fillna(0).abs()
-        
-        # A row is resting if capacity change is virtually zero
-        is_resting = cap_diff < 1e-7
-        
-        # Group contiguous rest blocks
-        # state changes whenever we flip between pulse and rest
-        state_changes = (is_resting != is_resting.shift(1, fill_value=False)).cumsum()
-        
-        # Select rows belonging to rest states
-        resting_df = group[is_resting]
-        if resting_df.empty:
+        # kind='stable' matters here: at an exact step boundary, the relaxed
+        # point and the post-jump point share an identical timestamp, and we
+        # rely on their original solve-time order (relaxed first) to tell
+        # them apart below.
+        group = group.sort_values('Time [s]', kind='stable').reset_index(drop=True)
+        n_steps = int(group['N_Steps'].iloc[0])
+        times = group['Time [s]'].values
+
+        ocv_rows = []
+        for k in range(1, n_steps + 1):
+            target_t = k * STEP_DURATION_S
+            matches = np.where(np.isclose(times, target_t, atol=BOUNDARY_TIME_TOL_S))[0]
+            if matches.size == 0:
+                break  # this step (and any later ones) never completed - early voltage cutoff
+            ocv_rows.append(group.iloc[matches[0]])  # first = still-relaxed value
+
+        if not ocv_rows:
             continue
-            
-        # Get the VERY LAST row of each rest phase (fully relaxed OCV)
-        ocv_points = resting_df.groupby(state_changes).last().reset_index(drop=True)
-        
+
+        ocv_points = pd.DataFrame(ocv_rows).reset_index(drop=True)
+
         # Include the initial starting point (t=0) as the reference OCV
         start_row = group.iloc[[0]][['Time [s]', 'Voltage [V]', 'Capacity [A.h]']]
         ocv_sequence = pd.concat([start_row, ocv_points[['Time [s]', 'Voltage [V]', 'Capacity [A.h]']]], ignore_index=True)
         
         # Calculate dV and dQ between consecutive relaxed points
-        dV = ocv_sequence['Voltage [V]'].diff().abs() # Drop in voltage
+        # Signed on purpose: during discharge voltage drops while capacity rises,
+        # so dV/dQ comes out negative, matching the paper's dV/dQ curves (Fig. 3d).
+        dV = ocv_sequence['Voltage [V]'].diff()
         dQ = ocv_sequence['Capacity [A.h]'].diff()     # Discharged capacity
-        
+
         # Keep only valid intervals where capacity actually advanced
         valid = (dQ > 1e-5)
+
+        # Sanity check: aborted pulses (voltage cutoff hit) should only ever
+        # truncate the END of the sequence. If an invalid interval is followed
+        # by a valid one, enumerate() below would renumber the remaining steps
+        # and dV_dQ_step_N would no longer refer to the same physical pulse
+        # across batteries, silently breaking positional feature alignment.
+        valid_tail = valid.values[1:]  # index 0 is always NaN/False (no prior point)
+        invalid_positions = np.where(~valid_tail)[0]
+        if invalid_positions.size > 0:
+            first_invalid = invalid_positions[0]
+            assert valid_tail[first_invalid:].sum() == 0, (
+                f"Battery_ID {battery_id}: found a valid dV/dQ transition after an "
+                f"invalid one (first invalid at pulse {first_invalid + 1}). Expected "
+                "invalid transitions only at the end of the sequence (early voltage "
+                "cutoff) — a mid-sequence gap would break positional step indexing."
+            )
+
         dvdq_values = (dV[valid] / dQ[valid]).values
         
         battery_features = {
@@ -69,10 +114,22 @@ def create_features_by_steps(input_csv, step_counts=[5, 10, 15, 20, 25]):
     print("\nExtraction Summary:")
     for n in step_counts:
         step_subset = full_df[full_df['N_Steps'] == n].copy()
-        
+
+        # full_df is the union of every battery's dV_dQ_step_* columns across
+        # ALL step counts, so a subset filtered to N_Steps == n still carries
+        # columns beyond n (e.g. dV_dQ_step_6.. for the 5-step subset) that no
+        # 5-step battery could ever populate -- entirely NaN. Left in, these
+        # get silently dropped by SimpleImputer downstream, which desyncs
+        # ml_pipeline_future.py's feature_cols (still listing all of them)
+        # from the model's actual trained input width, corrupting the
+        # feature-importance plot's column lookup and the saved feature list.
+        all_step_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_step_')]
+        empty_step_cols = [c for c in all_step_cols if step_subset[c].isna().all()]
+        step_subset = step_subset.drop(columns=empty_step_cols)
+
         # Find all valid step columns for this step count
         feat_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_step_')]
-        
+
         out_name = f"ml_features_{n}_steps.csv"
         step_subset.to_csv(out_name, index=False)
         datasets[n] = step_subset
@@ -124,7 +181,7 @@ def plot_all_step_profiles(datasets):
         
         ax.set_title(f'GITT Pulse Profile: {n_steps} Steps (ΔQ = {0.6 / n_steps:.3f} Ah / pulse)', fontsize=11, fontweight='bold')
         ax.set_xlabel('Pulse Step Number')
-        ax.set_ylabel('|dV/dQ| [V/Ah]')
+        ax.set_ylabel('dV/dQ [V/Ah]')
         
         all_x = sorted(list(set(x_lfp + x_nmc)))
         if all_x:

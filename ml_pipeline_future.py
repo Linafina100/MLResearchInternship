@@ -5,7 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.model_selection import StratifiedGroupKFold, train_test_split
+from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier
@@ -30,12 +30,21 @@ def run_ml_pipeline(
     """
     1. DYNAMIC FEATURE SELECTION
     Instead of hardcoding 'col.startswith("dV_dQ_step_")', we drop known metadata.
-    This ensures any new features added in feature engineering (e.g., rest voltage, 
-    internal resistance, temperature) are automatically included. 
+    This ensures any new features added in feature engineering (e.g., rest voltage,
+    internal resistance, temperature) are automatically included.
     We remove metadata columns that are not features: Battery_ID, Chemistry, Size_Multiplier,
     SOH, Initial_SOC so that the model cant "cheat" by using labels.
+    Target_Capacity_Ah and N_Steps are excluded too: the paper deliberately varies cell
+    capacity across all chemistries so that chemistry identification cannot be shortcut
+    via capacity ("To ensure that the cathode chemistries are not identified by their
+    different cell capacities..."). Leaving Target_Capacity_Ah in X would let the model
+    do exactly that. N_Steps is constant within any single per-step-count CSV, so it
+    carries no information anyway, but it's metadata, not a physical feature.
     """
-    metadata_cols = ['Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC']
+    metadata_cols = [
+        'Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC',
+        'Target_Capacity_Ah', 'N_Steps',
+    ]
     feature_cols = [col for col in df.columns if col not in metadata_cols]
     print(f"Identified {len(feature_cols)} feature columns for training.")
 
@@ -43,22 +52,21 @@ def run_ml_pipeline(
     y = df['Chemistry'].copy()
 
     """
-    2. INFINITIES & ARTIFACTS
-    a) During resting intervals, transition phases or measurement delays, 
-    current may stop or sensor reading migh not register a chnage in capacity => Q=0
-    Division by zero (dQ -> 0) creates +/- inf, 
-    when scaler etc is applied it makes the entire column mean into inf => value error and the model crash.
+    2. INFINITIES & MISSING STEPS
+    During resting intervals, transition phases or measurement delays, current may stop
+    or the sensor reading might not register a change in capacity => Q=0. Division by
+    zero (dQ -> 0) creates +/- inf; when the scaler etc. is applied this makes the
+    entire column mean become inf => value error and the model crashes.
     => So we convert them directly to NaNs.
 
-    b)In feature engineering we use zero padding to will up the shorter runs so all have 15 variables. 
-    This means that in dV/dQ, 0.0 often indicates missing pulses (early cutoff) rather than a
-    true physical flat curve. Which can cause problems for the classification. 
-    Convert 0.0 back to NaN so the imputer/XGBoost handles them as missing observations rather 
-    than false plateau features. 
-    This wont effect real plateau features because they are never exactly 0.0.
+    Note: feature_engineering_advanced.py no longer zero-pads shorter runs. Batteries
+    that hit an early voltage cutoff simply have fewer dV_dQ_step_* keys, and pandas
+    naturally fills the missing trailing columns with NaN when the rows are combined
+    into a DataFrame. So NaN already correctly means "missing pulse" here, and a real
+    dV/dQ value of exactly 0.0 (e.g. from the LFP plateau) is genuine physical signal,
+    not a missing-step artifact — it must NOT be overwritten with NaN.
     """
     X.replace([np.inf, -np.inf], np.nan, inplace=True) #convert +/- into NaN
-    X.replace(0.0, np.nan, inplace=True) #convert 0.0 to NaN
 
     """
     3. LABEL ENCODING
@@ -84,16 +92,19 @@ def run_ml_pipeline(
         y_train = y_encoded
         X_test = df_real[feature_cols].copy()
         X_test.replace([np.inf, -np.inf], np.nan, inplace=True)
-        X_test.replace(0.0, np.nan, inplace=True)
         y_test = le.transform(df_real['Chemistry'])
         print(f"Sim-to-Real split: {len(X_train)} synthetic train samples | {len(X_test)} real test samples.")
     else:
-        # If no real data is provided yet, use Stratified Grouped Split on simulation data.
-        # Grouping by Battery_ID prevents augmented/sliced battery cycles from leaking into test.
-        print("\n--> [Step 2] Performing 80/20 Stratified Train-Test Split on synthetic data...")
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
-        )
+        # If no real data is provided yet, use a Stratified Grouped Split on simulation data.
+        # Grouping by Battery_ID prevents augmented/sliced battery cycles from leaking into test
+        # (each battery's samples land entirely in either train or test, never split across both).
+        print("\n--> [Step 2] Performing ~80/20 Stratified Group Split on synthetic data...")
+        groups = df['Battery_ID'].values
+        sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
+        train_idx, test_idx = next(sgkf.split(X, y_encoded, groups=groups))
+
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y_encoded[train_idx], y_encoded[test_idx]
         print(f"Split completed: {len(X_train)} train samples | {len(X_test)} test samples.")
 
     """
@@ -230,7 +241,7 @@ def run_ml_pipeline(
 
 if __name__ == "__main__":
     # Standard training mode:
-    run_ml_pipeline(synthetic_csv="ml_features_25_steps9599.csv") #update for every step count and SOC
+    run_ml_pipeline(synthetic_csv="ml_features_25_steps.csv") #update for every step count and SOC
     
     # Future real-world validation mode (uncomment when factory test data is ready):
     # run_ml_pipeline(
