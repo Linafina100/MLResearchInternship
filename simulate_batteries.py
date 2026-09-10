@@ -12,12 +12,28 @@ RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
-# Select the mathematical model (SPM)
+# Select the mathematical model (SPM). Deliberately isothermal, not PyBaMM's
+# lumped-thermal option: that submodel requires entropic-heat and cell
+# geometry parameters that Prada2013 (LFP) never defines, and even for
+# Chen2020 (NMC) the isothermal model's Arrhenius kinetics are not wired to
+# "Ambient temperature [K]" outside the thermal submodel (verified: sweeping
+# 0-35 C produced byte-identical voltage output). Rather than force the
+# thermal submodel and guess at LFP-specific entropic-heat data borrowed
+# from an unrelated chemistry -- which would be actively misleading, not
+# just approximate -- temperature's dominant real effect (higher internal
+# resistance when cold) is applied explicitly below via TEMP_RESISTANCE_COEFF.
 model = pybamm.lithium_ion.SPM()
 
-# Load default chemical parameters
+# Load default chemical parameters. NMC is pooled across three independent
+# literature parameter sets (not just Chen2020) so the model can't memorize
+# one fixed OCP curve as a chemistry signature -- see NMC_PARAMETER_SETS
+# below. ORegan2022 was also considered but excluded: its positive electrode
+# conductivity is a temperature-dependent function, not a scalar, so it's
+# incompatible with the *= scaling used for capacity/resistance below.
 param_lfp_base = pybamm.ParameterValues("Prada2013")
-param_nmc_base = pybamm.ParameterValues("Chen2020")
+NMC_PARAMETER_SETS = ["Chen2020", "Mohtat2020", "OKane2022"]
+param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
+param_nmc_base = param_nmc_bases["Chen2020"]  # reference for capacity_multipliers below
 
 # Pulse discharge (GITT) from the article, green/yellow identification interval:
 # total discharged capacity is fixed at ΔQ = 0.6 Ah (half of the assumed
@@ -111,9 +127,10 @@ def solve_with_cutoff(sim, initial_soc, chem, n_steps, context=""):
 # Target cell capacities from the article (Sec. 3): "the electrode geometries
 # are adjusted to different capacities for training purposes, i.e., 1.2 Ah,
 # 2 Ah, and 3.5 Ah, covering the common capacity range of 18650 cells."
-# LFP (Prada2013, base ~2.3 Ah) and NMC (Chen2020, base ~5.0 Ah) have very
-# different base capacities, so a single shared thickness multiplier does not
-# land both chemistries on the same target capacity. Instead, a per-chemistry
+# LFP (Prada2013, base ~2.3 Ah) and NMC (base ~5.0 Ah -- confirmed identical
+# across all three pooled NMC_PARAMETER_SETS) have very different base
+# capacities, so a single shared thickness multiplier does not land both
+# chemistries on the same target capacity. Instead, a per-chemistry
 # multiplier is derived from each base parameter set's own declared
 # "Nominal cell capacity [A.h]", so that both chemistries actually reach
 # ~1.2/2.0/3.5 Ah at each size step, keeping capacity itself uninformative
@@ -156,10 +173,28 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         # absolute SOC bins -- a fixed starting SOC would make each
         # chemistry only ever populate a narrow, unrealistically
         # consistent slice of the voltage range.
-        # SOH is randomized over a narrower 75-85% aged range (per
-        # teammate update in ella_branch)
+        # SOH is randomized over 50-85%: Stena is a recycling facility, so
+        # the training population should reflect the degraded/end-of-life
+        # cells it will actually receive, not a healthier range that would
+        # never be seen at inference time (train/serve skew). Widened down
+        # from the previous 75-85% band per explicit domain guidance.
         soc = random.uniform(0.5, 1.0)
-        soh = random.uniform(0.75, 0.85)
+        soh = random.uniform(0.50, 0.85)
+
+        # Ambient temperature at time of test, independent of SOH. Real
+        # degraded cells at the same nominal SOH don't all show the same
+        # resistance: different aging pathways (SEI growth vs. lithium
+        # plating vs. particle isolation vs. contact-resistance loss) and
+        # different ambient conditions in storage/transport produce
+        # different IR-drop behavior for the "same" capacity-based SOH.
+        # Applied explicitly via TEMP_RESISTANCE_COEFF below rather than
+        # PyBaMM's thermal submodel -- see the model-selection comment above.
+        ambient_c = random.uniform(0, 35)
+        TEMP_RESISTANCE_COEFF = 0.02  # ~2%/C conductivity change per degree
+                                       # from a 25 C reference; a conservative,
+                                       # commonly-cited order of magnitude for
+                                       # Li-ion internal resistance vs. temperature
+        temp_conductivity_multiplier = 1.0 + TEMP_RESISTANCE_COEFF * (ambient_c - 25.0)
 
         # Globally unique id for this (size, variation) draw. SOH is stored
         # rounded to 3 decimals, and with 83 random draws per size from only
@@ -173,11 +208,16 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         # each (size, i) draw stays its own identity everywhere downstream.
         variation_id = size_idx * variations_per_size + i
 
-        print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | SOC: {soc:.2f} | SOH: {soh:.2f} ---")
+        # Pool NMC across independent literature parameter sets so the model
+        # can't memorize one fixed OCP curve as a chemistry signature.
+        nmc_set_name = random.choice(NMC_PARAMETER_SETS)
+
+        print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | "
+              f"SOC: {soc:.2f} | SOH: {soh:.2f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
 
         # Create clean parameter copies
         param_lfp = param_lfp_base.copy()
-        param_nmc = param_nmc_base.copy()
+        param_nmc = param_nmc_bases[nmc_set_name].copy()
 
         chemistries = {
             "LFP": param_lfp,
@@ -185,6 +225,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         }
 
         # Apply per-chemistry Capacity Scaling (Electrode thickness) and Aging/SOH
+        resistance_factors = {}
         for chem, param in chemistries.items():
             mult = capacity_multipliers[chem][size_idx]
             param["Negative electrode thickness [m]"] *= mult
@@ -194,9 +235,19 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
 
-            # 2. Resistance growth: decrease electrode conductivity as SOH decreases
-            param["Negative electrode conductivity [S.m-1]"] *= soh
-            param["Positive electrode conductivity [S.m-1]"] *= soh
+            # 2. Resistance growth: decoupled from SOH (not the same scalar),
+            # so cells at the same nominal SOH don't all show identical
+            # IR-drop -- see the ambient_c comment above. resistance_noise
+            # gives each chemistry's resistance growth its own independent
+            # draw (aging-pathway variance); temp_conductivity_multiplier
+            # applies the shared ambient-temperature effect; the result is
+            # clamped so conductivity never exceeds the un-aged baseline
+            # (>1.0) or collapses to a solver-destabilizing near-zero value.
+            resistance_noise = random.uniform(0.8, 1.2)
+            resistance_factor = min(1.0, max(0.3, soh * resistance_noise * temp_conductivity_multiplier))
+            resistance_factors[chem] = resistance_factor
+            param["Negative electrode conductivity [S.m-1]"] *= resistance_factor
+            param["Positive electrode conductivity [S.m-1]"] *= resistance_factor
 
         for n_steps in STEP_COUNTS:
             for chem, param in chemistries.items():
@@ -225,6 +276,9 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
                     "Size_Multiplier": capacity_multipliers[chem][size_idx],
                     "SOH": round(soh, 3),
                     "Initial_SOC": round(soc, 3),
+                    "Ambient_Temperature_C": round(ambient_c, 2),
+                    "Resistance_Factor": round(resistance_factors[chem], 4),
+                    "Base_Parameter_Set": nmc_set_name if chem == "NMC" else "Prada2013",
                     "N_Steps": n_steps,
                     "V_min [V]": v_min,
                     "Variation_ID": variation_id,

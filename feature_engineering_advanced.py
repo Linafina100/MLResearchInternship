@@ -119,6 +119,13 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25]):
             'Initial_SOC': group['Initial_SOC'].iloc[0],
             'N_Steps': int(group['N_Steps'].iloc[0]),
         }
+        # Carried through for analysis/debugging only (e.g. checking whether
+        # the voltage-bin separation holds up per base parameter set or
+        # temperature); ml_pipeline_future.py's metadata_cols excludes these
+        # from the actual feature matrix.
+        for optional_col in ('Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set'):
+            if optional_col in group.columns:
+                battery_features[optional_col] = group[optional_col].iloc[0]
 
         # Pre-initialize standard voltage bins (descending, matching discharge
         # direction) so every battery gets the same uniform column set.

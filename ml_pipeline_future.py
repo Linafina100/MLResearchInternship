@@ -58,6 +58,11 @@ def run_ml_pipeline(
     metadata_cols = [
         'Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC',
         'Target_Capacity_Ah', 'N_Steps',
+        # Carried through from feature_engineering_advanced.py for analysis
+        # only (e.g. checking the voltage-bin separation per base parameter
+        # set or temperature) -- not real features, and Base_Parameter_Set
+        # is a string column that would break the numeric imputer/scaler.
+        'Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set',
     ]
     if pretrained_model_path and os.path.exists("feature_names.json"):
         with open("feature_names.json", "r") as f:
