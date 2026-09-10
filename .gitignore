@@ -1,3 +1,4 @@
 *.csv
+!soc_sweep_results.csv
 PyBammArtikel.pdf
 pulse_discharge_plot*.png
