@@ -1,3 +1,4 @@
+import os
 import pybamm
 import pandas as pd
 import numpy as np
@@ -11,6 +12,20 @@ import matplotlib.pyplot as plt
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
+
+# Starting-SOC sampling interval, overridable via environment variables so
+# run_soc_sweep.py can drive systematic SOC-availability sweeps (simulating
+# how much of the OCV curve an end-of-life cell arriving at Stena actually
+# offers) without duplicating this script's physics setup. Defaults match
+# the standard 50-100% article-matching range used everywhere else.
+SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
+SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
+
+# Output paths, likewise overridable so the sweep can keep each interval's
+# raw simulation data from silently overwriting the previous one.
+OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", "advanced_synthetic_battery_data.csv")
+FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", "simulation_failures.csv")
+PULSE_PLOT_PNG = os.environ.get("PULSE_PLOT_PNG", "pulse_discharge_plot.png")
 
 # Select the mathematical model (SPM). Deliberately isothermal, not PyBaMM's
 # lumped-thermal option: that submodel requires entropic-heat and cell
@@ -163,10 +178,12 @@ print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
-        # SOC is randomized over 50-100%, matching the article's own
-        # discharge-case sampling (Sec. 3: "uniformly distributed random
-        # values between 50% and 100% SOC for discharge"). A previously
-        # fixed SOC (first 1.0, then 0.6) made every battery's pulse test
+        # SOC is randomized over [SOC_RANGE_MIN, SOC_RANGE_MAX], 50-100% by
+        # default, matching the article's own discharge-case sampling (Sec.
+        # 3: "uniformly distributed random values between 50% and 100% SOC
+        # for discharge"). run_soc_sweep.py overrides this range per run to
+        # test how much high-voltage data a cell's starting SOC provides.
+        # A previously fixed SOC (first 1.0, then 0.6) made every battery's pulse test
         # start from the identical point on the OCV curve, which both (a)
         # under-represented real-world variance and (b) is required now
         # that features are keyed on absolute voltage bins instead of
@@ -178,7 +195,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         # cells it will actually receive, not a healthier range that would
         # never be seen at inference time (train/serve skew). Widened down
         # from the previous 75-85% band per explicit domain guidance.
-        soc = random.uniform(0.5, 1.0)
+        soc = random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX)
         soh = random.uniform(0.50, 0.85)
 
         # Ambient temperature at time of test, independent of SOH. Real
@@ -287,7 +304,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
 
 # Combine and save
 training_data = pd.concat(all_data)
-output_file = "advanced_synthetic_battery_data.csv"
+output_file = OUTPUT_DATA_CSV
 training_data.to_csv(output_file, index=False)
 print(f"\nDone! Data with realistic pulses, SOC, and aging saved to '{output_file}'")
 
@@ -300,7 +317,7 @@ print(f"\n{len(FAILURE_LOG)} of {total_attempts} solve attempts failed.")
 if FAILURE_LOG:
     failures_df = pd.DataFrame(FAILURE_LOG)
     print(failures_df["ExceptionType"].value_counts().to_string())
-    failure_log_file = "simulation_failures.csv"
+    failure_log_file = FAILURE_LOG_CSV
     failures_df.to_csv(failure_log_file, index=False)
     print(f"Full failure log saved to '{failure_log_file}'")
 
@@ -323,7 +340,7 @@ plt.ylabel('Voltage [V]')
 plt.legend()
 plt.grid(True)
 
-plot_file = "pulse_discharge_plot.png"
+plot_file = PULSE_PLOT_PNG
 plt.savefig(plot_file, dpi=150)
 print(f"Plot saved to '{plot_file}'")
 

@@ -234,6 +234,7 @@ def run_ml_pipeline(
         best_model_name = f"Fine-Tuned ({type(best_model).__name__})"
         best_preds = best_model.predict(X_test_scaled)
         best_accuracy = accuracy_score(y_test, best_preds)
+        model_accuracies = {best_model_name: best_accuracy}
         print(f"{best_model_name:<25}: Accuracy = {best_accuracy * 100:.2f}%")
     else:
         models = {
@@ -259,6 +260,7 @@ def run_ml_pipeline(
         best_accuracy = 0.0
         best_model = None
         best_preds = None
+        model_accuracies = {}
 
         for name, model in models.items():
             # Train model
@@ -267,6 +269,7 @@ def run_ml_pipeline(
             # Generate predictions on unseen test set
             y_pred = model.predict(X_test_scaled)
             acc = accuracy_score(y_test, y_pred)
+            model_accuracies[name] = acc
 
             print(f"{name:<25}: Accuracy = {acc * 100:.2f}%")
 
@@ -311,8 +314,10 @@ def run_ml_pipeline(
     axes[0].set_ylabel('True Chemistry')
 
     # Feature Importances (Top 10 most influential steps)
+    feature_importances = {}
     if hasattr(best_model, "feature_importances_"):
         importances = best_model.feature_importances_
+        feature_importances = dict(zip(feature_cols, importances))
         indices = np.argsort(importances)[::-1][:10]
         top_features = [feature_cols[i] for i in indices]
         top_weights = importances[indices]
@@ -324,7 +329,17 @@ def run_ml_pipeline(
     plt.tight_layout()
     plt.show()
 
-    return best_model
+    # Returned as a dict (rather than just best_model) so callers like
+    # run_soc_sweep.py can pull individual-model accuracies and feature
+    # importances programmatically instead of scraping stdout.
+    return {
+        "best_model": best_model,
+        "best_model_name": best_model_name,
+        "best_accuracy": best_accuracy,
+        "model_accuracies": model_accuracies,
+        "feature_importances": feature_importances,
+        "classes": classes,
+    }
 
 
 if __name__ == "__main__":
