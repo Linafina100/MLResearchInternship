@@ -146,9 +146,19 @@ print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
-        # SOC is fixed at 100% for now; SOH is randomized over a narrower
-        # 75-85% aged range (per teammate update in ella_branch)
-        soc = 1.0
+        # SOC is randomized over 50-100%, matching the article's own
+        # discharge-case sampling (Sec. 3: "uniformly distributed random
+        # values between 50% and 100% SOC for discharge"). A previously
+        # fixed SOC (first 1.0, then 0.6) made every battery's pulse test
+        # start from the identical point on the OCV curve, which both (a)
+        # under-represented real-world variance and (b) is required now
+        # that features are keyed on absolute voltage bins instead of
+        # absolute SOC bins -- a fixed starting SOC would make each
+        # chemistry only ever populate a narrow, unrealistically
+        # consistent slice of the voltage range.
+        # SOH is randomized over a narrower 75-85% aged range (per
+        # teammate update in ella_branch)
+        soc = random.uniform(0.5, 1.0)
         soh = random.uniform(0.75, 0.85)
 
         # Globally unique id for this (size, variation) draw. SOH is stored

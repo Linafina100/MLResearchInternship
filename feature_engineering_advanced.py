@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-def create_features_by_soc_bins(input_csv, step_counts=[5, 10, 15, 20, 25]):
+def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25]):
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
     
@@ -43,6 +43,21 @@ def create_features_by_soc_bins(input_csv, step_counts=[5, 10, 15, 20, 25]):
     BOUNDARY_TIME_TOL_S = 0.01   # far above float noise (observed to be exact),
                                   # far below the >=0.1 s gap to the next real
                                   # sample after a boundary
+
+    # Absolute terminal-voltage bins, not SOC bins. A real used cell pulled
+    # off the line has no known SOC without already knowing its chemistry
+    # (and remaining capacity) -- that's the target variable, so keying
+    # features on computed SOC is unusable at inference time. Voltage is
+    # exactly what a GITT pulse test measures directly, with no dependency
+    # on Target_Capacity_Ah/Initial_SOC (both simulation-only ground truth
+    # that a real cell doesn't have). The range is a superset of both
+    # chemistries' plausible terminal-voltage span (LFP ~2.0-3.6 V, NMC
+    # ~2.5-4.2 V per Chen2020/Prada2013) with margin; bins outside what a
+    # chemistry ever actually reaches are dropped per step-count below, the
+    # same way unreached SOC bins were dropped before.
+    V_BIN_MIN = 1.9
+    V_BIN_MAX = 4.3
+    V_BIN_WIDTH = 0.1
 
     for battery_id, group in df.groupby('Battery_ID'):
         # kind='stable' matters here: at an exact step boundary, the relaxed
@@ -105,46 +120,39 @@ def create_features_by_soc_bins(input_csv, step_counts=[5, 10, 15, 20, 25]):
             'N_Steps': int(group['N_Steps'].iloc[0]),
         }
 
-        # Pre-initialize standard 10% SOC bins (descending, matching discharge
+        # Pre-initialize standard voltage bins (descending, matching discharge
         # direction) so every battery gets the same uniform column set.
-        soc_bins = [f"dV_dQ_SOC_{round(i / 10, 1):.1f}_{round((i - 1) / 10, 1):.1f}" for i in range(10, 0, -1)]
-        for bin_name in soc_bins:
+        n_v_bins = round((V_BIN_MAX - V_BIN_MIN) / V_BIN_WIDTH)
+        voltage_bins = [
+            f"dV_dQ_V_{round(V_BIN_MIN + i * V_BIN_WIDTH, 1):.1f}_{round(V_BIN_MIN + (i - 1) * V_BIN_WIDTH, 1):.1f}"
+            for i in range(n_v_bins, 0, -1)
+        ]
+        for bin_name in voltage_bins:
             battery_features[bin_name] = np.nan
 
-        # Map each valid dV/dQ transition to the absolute SOC range it ends
-        # in. Phase 1's dV_dQ_step_N was positional (which pulse number),
-        # which real-world truncated discharge data can't reproduce (a
-        # partial factory pull doesn't know it was "pulse 7 of 15"). Absolute
-        # SOC bins are anchored to the battery's actual state of charge
-        # instead, so a truncated real-world trace can be mapped onto the
-        # same feature space as a full synthetic sweep.
-        #
-        # nominal_capacity must be the cell's true capacity (Target_Capacity_Ah),
-        # not group['Capacity [A.h]'].max() -- the GITT protocol only ever
-        # discharges a fixed ~0.6 Ah total regardless of cell size, so using
-        # the observed max as the denominator would incorrectly stretch every
-        # battery's SOC range down to ~0.0 regardless of its actual capacity,
-        # rather than reflecting how far it truly discharged (e.g. a 3.5 Ah
-        # cell discharging 0.6 Ah only drops to about SOC 0.83, not SOC 0.0).
-        nominal_capacity = group['Target_Capacity_Ah'].iloc[0]
-        init_soc = group['Initial_SOC'].iloc[0]
+        # Map each valid dV/dQ transition to the absolute terminal-voltage
+        # range it ends in. Phase 1's dV_dQ_step_N was positional (which
+        # pulse number), which real-world truncated discharge data can't
+        # reproduce (a partial factory pull doesn't know it was "pulse 7 of
+        # 15"). Phase 2 anchored bins to computed SOC instead, but a real
+        # used cell's SOC can't be computed without already knowing its
+        # chemistry and true capacity -- both the target variable and an
+        # unmeasured quantity for an unidentified cell. Voltage is what the
+        # pulse test actually measures, directly, with no such dependency.
         for idx in dV[valid].index:
             dv_val = dV.loc[idx]
             dq_val = dQ.loc[idx]
             dvdq = dv_val / dq_val
 
-            # Cumulative discharged capacity at this OCV point
-            cum_capacity = ocv_sequence['Capacity [A.h]'].iloc[idx]
-            current_soc = max(0.0, init_soc - (cum_capacity / nominal_capacity))
+            # Terminal voltage at this OCV point (the value this transition
+            # discharged INTO), clamped to the pre-initialized bin range.
+            v_val = ocv_sequence['Voltage [V]'].iloc[idx]
+            bin_high = np.ceil(round(v_val, 4) * 10) / 10.0
+            bin_high = min(V_BIN_MAX, max(V_BIN_MIN + V_BIN_WIDTH, bin_high))
+            bin_high = round(bin_high, 1)
+            bin_low = round(bin_high - V_BIN_WIDTH, 1)
 
-            # Map into the nearest 10% bin (bin_high is the SOC this
-            # transition discharged INTO, rounded up to the enclosing decile)
-            bin_high = min(1.0, np.ceil(current_soc * 10) / 10.0)
-            if bin_high <= 0.0:
-                bin_high = 0.1
-            bin_low = round(bin_high - 0.1, 1)
-
-            bin_key = f"dV_dQ_SOC_{bin_high:.1f}_{bin_low:.1f}"
+            bin_key = f"dV_dQ_V_{bin_high:.1f}_{bin_low:.1f}"
             battery_features[bin_key] = dvdq
 
         all_features.append(battery_features)
@@ -157,19 +165,20 @@ def create_features_by_soc_bins(input_csv, step_counts=[5, 10, 15, 20, 25]):
     for n in step_counts:
         step_subset = full_df[full_df['N_Steps'] == n].copy()
 
-        # All 10 SOC-bin columns are pre-initialized for every battery
+        # All voltage-bin columns are pre-initialized for every battery
         # regardless of N_Steps, so a bin is only ever entirely NaN for a
         # given step count if that protocol's coarser per-pulse capacity
-        # never actually lands a transition inside it -- drop those so
-        # ml_pipeline_future.py's feature_cols stays in sync with the
-        # model's real trained input width (see the analogous issue this
-        # fixed for the old positional dV_dQ_step_* columns).
-        all_soc_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_SOC_')]
-        empty_soc_cols = [c for c in all_soc_cols if step_subset[c].isna().all()]
-        step_subset = step_subset.drop(columns=empty_soc_cols)
+        # (or a chemistry's voltage range) never actually lands a transition
+        # inside it -- drop those so ml_pipeline_future.py's feature_cols
+        # stays in sync with the model's real trained input width (see the
+        # analogous issue this fixed for the old positional dV_dQ_step_*
+        # columns).
+        all_v_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_V_')]
+        empty_v_cols = [c for c in all_v_cols if step_subset[c].isna().all()]
+        step_subset = step_subset.drop(columns=empty_v_cols)
 
-        # Find all valid SOC bin columns for this step count
-        feat_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_SOC_')]
+        # Find all valid voltage bin columns for this step count
+        feat_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_V_')]
 
         out_name = f"ml_features_{n}_steps.csv"
         step_subset.to_csv(out_name, index=False)
@@ -177,12 +186,12 @@ def create_features_by_soc_bins(input_csv, step_counts=[5, 10, 15, 20, 25]):
 
         # Sanity check: count non-null values
         valid_vals = step_subset[feat_cols].notna().sum().sum()
-        print(f"  -> {out_name}: {len(step_subset)} batteries, {len(feat_cols)} SOC bin columns, {valid_vals} valid entries")
+        print(f"  -> {out_name}: {len(step_subset)} batteries, {len(feat_cols)} voltage bin columns, {valid_vals} valid entries")
 
     return datasets
 
 
-def plot_all_soc_bin_profiles(datasets):
+def plot_all_voltage_bin_profiles(datasets):
     step_counts = sorted(datasets.keys())
     fig, axes = plt.subplots(len(step_counts), 1, figsize=(10, 3.5 * len(step_counts)))
     
@@ -204,15 +213,16 @@ def plot_all_soc_bin_profiles(datasets):
         nmc_sample = nmc_rows.iloc[0]
         
         # Extract features for this step
-        feature_cols = [c for c in subset.columns if c.startswith('dV_dQ_SOC_')]
+        feature_cols = [c for c in subset.columns if c.startswith('dV_dQ_V_')]
 
         # Convert to numeric vectors
         y_lfp = lfp_sample[feature_cols].astype(float).dropna()
         y_nmc = nmc_sample[feature_cols].astype(float).dropna()
 
-        # x-axis is the SOC this bin discharged INTO (the "_high" boundary,
-        # e.g. "dV_dQ_SOC_1.0_0.9" -> 1.0), so points read left-to-right as
-        # discharge progresses once the axis is inverted below.
+        # x-axis is the voltage this bin discharged INTO (the "_high"
+        # boundary, e.g. "dV_dQ_V_3.8_3.7" -> 3.8), so points read
+        # left-to-right as discharge progresses once the axis is inverted
+        # below.
         x_lfp = [float(col.split('_')[-2]) for col in y_lfp.index]
         x_nmc = [float(col.split('_')[-2]) for col in y_nmc.index]
 
@@ -223,14 +233,14 @@ def plot_all_soc_bin_profiles(datasets):
         ax.plot(x_lfp, y_lfp.values, marker='o', label='LFP', color='#1f77b4', linewidth=2, markersize=6)
         ax.plot(x_nmc, y_nmc.values, marker='s', label='NMC', color='#ff7f0e', linewidth=2, markersize=6)
 
-        ax.set_title(f'GITT Pulse Profile: {n_steps} Steps (Absolute SOC bins)', fontsize=11, fontweight='bold')
-        ax.set_xlabel('State of Charge')
+        ax.set_title(f'GITT Pulse Profile: {n_steps} Steps (Absolute voltage bins)', fontsize=11, fontweight='bold')
+        ax.set_xlabel('Terminal Voltage [V]')
         ax.set_ylabel('dV/dQ [V/Ah]')
 
         all_x = sorted(set(x_lfp + x_nmc), reverse=True)
         if all_x:
             ax.set_xticks(all_x)
-        ax.invert_xaxis()  # SOC 1.0 (start of discharge) on the left
+        ax.invert_xaxis()  # highest voltage (start of discharge) on the left
 
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.legend()
@@ -243,5 +253,5 @@ if __name__ == "__main__":
     input_file = "advanced_synthetic_battery_data.csv"
     step_list = [5, 10, 15, 20, 25]
 
-    datasets = create_features_by_soc_bins(input_file, step_counts=step_list)
-    plot_all_soc_bin_profiles(datasets)
+    datasets = create_features_by_voltage_bins(input_file, step_counts=step_list)
+    plot_all_voltage_bin_profiles(datasets)
