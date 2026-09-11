@@ -15,13 +15,15 @@ NMC parameter-set pooling).
 
 Each interval runs simulate_batteries.py in a fresh subprocess (so its
 module-level state, including the fixed RANDOM_SEED, resets cleanly every
-time) and appends one row to soc_sweep_results.csv immediately -- so a
-crash partway through a later interval does not lose earlier results.
+time) and appends one row to data/summary/soc_sweep_results.csv immediately
+-- so a crash partway through a later interval does not lose earlier
+results.
 
 Runtime: PyBaMM solving dominates, ~10-11 minutes per interval, so expect
 ~40-45 minutes total for all four intervals. Each interval's raw simulation
-CSV (~200MB) is kept, not deleted, for later inspection -- expect ~800MB of
-extra disk usage across all four intervals.
+CSV (~200MB), kept under data/soc_<interval>/raw/, is kept, not deleted, for
+later inspection -- expect ~800MB of extra disk usage across all four
+intervals.
 
 Usage: python3 run_soc_sweep.py
 """
@@ -34,11 +36,12 @@ import subprocess
 import sys
 import time
 
-from feature_engineering_advanced import create_features_by_voltage_bins
-from ml_pipeline_future import run_ml_pipeline
+from feature_engineering import create_features_by_voltage_bins
+from ml_pipeline import run_ml_pipeline
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SIMULATE_SCRIPT = os.path.join(PROJECT_DIR, "simulate_batteries.py")
+DATA_DIR = os.path.join(PROJECT_DIR, "data")
 
 # (soc_max, soc_min) pairs -- matches simulate_batteries.py's
 # random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX) draw for starting SOC.
@@ -48,7 +51,7 @@ SOC_INTERVALS = [(1.0, 0.7), (0.8, 0.5), (0.6, 0.3), (0.4, 0.1)]
 # dataset; kept consistent here so sweep results are directly comparable.
 STEP_COUNT_FOR_TRAINING = 25
 
-RESULTS_CSV = os.path.join(PROJECT_DIR, "soc_sweep_results.csv")
+RESULTS_CSV = os.path.join(DATA_DIR, "summary", "soc_sweep_results.csv")
 RESULTS_COLUMNS = ["SOC_Interval", "RF_Accuracy", "XGB_Accuracy", "Top_Features"]
 
 
@@ -62,6 +65,7 @@ def _format_top_features(feature_importances, n=3):
 
 
 def _append_result_row(row):
+    os.makedirs(os.path.dirname(RESULTS_CSV), exist_ok=True)
     write_header = not os.path.exists(RESULTS_CSV)
     with open(RESULTS_CSV, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=RESULTS_COLUMNS)
@@ -76,18 +80,18 @@ def run_one_interval(soc_max, soc_min):
           f"(SOC_RANGE_MIN={soc_min}, SOC_RANGE_MAX={soc_max})\n{'=' * 70}")
     t_start = time.time()
 
-    # Per-interval file names so each interval's raw data survives the next
-    # interval's run instead of silently overwriting it.
-    data_csv = os.path.join(PROJECT_DIR, f"advanced_synthetic_battery_data_soc_{label}.csv")
-    failure_csv = os.path.join(PROJECT_DIR, f"simulation_failures_soc_{label}.csv")
-    plot_png = os.path.join(PROJECT_DIR, f"pulse_discharge_plot_soc_{label}.png")
+    # Per-interval run label so each interval's raw data lands in its own
+    # data/soc_<label>/ tree -- sorted by run -- instead of overwriting the
+    # previous interval's files, with raw/failures/plots/features sorted by
+    # kind underneath it (see simulate_batteries.py's DATA_DIR/RUN_LABEL).
+    run_label = f"soc_{label}"
+    run_dir = os.path.join(DATA_DIR, run_label)
+    data_csv = os.path.join(run_dir, "raw", "advanced_synthetic_battery_data.csv")
 
     env = os.environ.copy()
     env["SOC_RANGE_MIN"] = str(soc_min)
     env["SOC_RANGE_MAX"] = str(soc_max)
-    env["OUTPUT_DATA_CSV"] = data_csv
-    env["FAILURE_LOG_CSV"] = failure_csv
-    env["PULSE_PLOT_PNG"] = plot_png
+    env["RUN_LABEL"] = run_label
     env.setdefault("MPLBACKEND", "Agg")
 
     print("[1/3] Simulating (slow step, ~10 min)...")
@@ -95,16 +99,20 @@ def run_one_interval(soc_max, soc_min):
 
     print("[2/3] Feature engineering (voltage bins)...")
     # create_features_by_voltage_bins also writes ml_features_{n}_steps.csv
-    # via a relative path as a side effect; that's ignored here in favor of
-    # writing our own per-interval copy from the returned DataFrame
-    # directly, at a fully-qualified path, so training never depends on cwd
-    # matching PROJECT_DIR or on one interval's file overwriting another's.
-    datasets = create_features_by_voltage_bins(data_csv, step_counts=[STEP_COUNT_FOR_TRAINING])
+    # into data/soc_<label>/features/ as a side effect; that's ignored here
+    # in favor of writing our own per-interval copy (with the SOC label in
+    # its name) from the returned DataFrame directly, at a fully-qualified
+    # path, so training never depends on cwd matching PROJECT_DIR or on one
+    # interval's file overwriting another's.
+    features_dir = os.path.join(run_dir, "features")
+    datasets = create_features_by_voltage_bins(
+        data_csv, step_counts=[STEP_COUNT_FOR_TRAINING], output_dir=features_dir
+    )
     step_subset = datasets[STEP_COUNT_FOR_TRAINING]
     n_batteries = len(step_subset)
     print(f"  -> {n_batteries} batteries with usable {STEP_COUNT_FOR_TRAINING}-step features")
 
-    features_csv = os.path.join(PROJECT_DIR, f"ml_features_soc_{label}_{STEP_COUNT_FOR_TRAINING}_steps.csv")
+    features_csv = os.path.join(features_dir, f"ml_features_soc_{label}_{STEP_COUNT_FOR_TRAINING}_steps.csv")
     step_subset.to_csv(features_csv, index=False)
 
     print("[3/3] Training (Random Forest + XGBoost, artifacts not saved)...")

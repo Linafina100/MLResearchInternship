@@ -21,11 +21,23 @@ np.random.seed(RANDOM_SEED)
 SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
 SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
 
-# Output paths, likewise overridable so the sweep can keep each interval's
-# raw simulation data from silently overwriting the previous one.
-OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", "advanced_synthetic_battery_data.csv")
-FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", "simulation_failures.csv")
-PULSE_PLOT_PNG = os.environ.get("PULSE_PLOT_PNG", "pulse_discharge_plot.png")
+# All generated data lives under data/<run_label>/<kind>/, so different runs
+# (the default standalone run vs. each run_soc_sweep.py interval) never
+# overwrite each other and files are easy to find by what produced them and
+# what they contain. RUN_LABEL defaults to "default" for a plain standalone
+# run; run_soc_sweep.py sets it per SOC interval (e.g. "soc_0.1-0.4").
+DATA_DIR = os.environ.get("DATA_DIR", "data")
+RUN_LABEL = os.environ.get("RUN_LABEL", "default")
+RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
+
+# Individual paths remain overridable so callers can pin an exact location
+# if ever needed, but default to the sorted-by-run/sorted-by-kind layout.
+OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))
+FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", os.path.join(RUN_DIR, "failures", "simulation_failures.csv"))
+PULSE_PLOT_PNG = os.environ.get("PULSE_PLOT_PNG", os.path.join(RUN_DIR, "plots", "pulse_discharge_plot.png"))
+
+for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, PULSE_PLOT_PNG):
+    os.makedirs(os.path.dirname(_output_path), exist_ok=True)
 
 # Select the mathematical model (SPM). Deliberately isothermal, not PyBaMM's
 # lumped-thermal option: that submodel requires entropic-heat and cell
