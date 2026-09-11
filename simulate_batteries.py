@@ -13,13 +13,7 @@ RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
-# Starting-SOC sampling interval, overridable via environment variables so
-# run_soc_sweep.py can drive systematic SOC-availability sweeps (simulating
-# how much of the OCV curve an end-of-life cell arriving at Stena actually
-# offers) without duplicating this script's physics setup. Defaults match
-# the standard 50-100% article-matching range used everywhere else.
-SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
-SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
+
 
 # All generated data lives under data/<run_label>/<kind>/, so different runs
 # (the default standalone run vs. each run_soc_sweep.py interval) never
@@ -207,7 +201,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         # cells it will actually receive, not a healthier range that would
         # never be seen at inference time (train/serve skew). Widened down
         # from the previous 75-85% band per explicit domain guidance.
-        soc = random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX)
+        soc = random.uniform(0.5, 1.0)
         soh = random.uniform(0.50, 0.85)
 
         # Ambient temperature at time of test, independent of SOH. Real
