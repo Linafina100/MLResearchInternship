@@ -11,7 +11,8 @@ def _default_features_dir(input_csv):
     return os.path.join(run_dir, "features")
 
 
-def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], output_dir=None):
+def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], output_dir=None,
+                                     min_chemistry_coverage=0.2):
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
 
@@ -188,16 +189,33 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         # regardless of N_Steps, so a bin is only ever entirely NaN for a
         # given step count if that protocol's coarser per-pulse capacity
         # (or a chemistry's voltage range) never actually lands a transition
-        # inside it -- drop those so ml_pipeline_future.py's feature_cols
-        # stays in sync with the model's real trained input width (see the
-        # analogous issue this fixed for the old positional dV_dQ_step_*
-        # columns).
+        # inside it -- drop those so ml_pipeline.py's feature_cols stays in
+        # sync with the model's real trained input width (see the analogous
+        # issue this fixed for the old positional dV_dQ_step_* columns).
         all_v_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_V_')]
         empty_v_cols = [c for c in all_v_cols if step_subset[c].isna().all()]
         step_subset = step_subset.drop(columns=empty_v_cols)
 
         # Find all valid voltage bin columns for this step count
         feat_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_V_')]
+
+        # Drop bins that only ONE chemistry ever reaches. LFP and NMC have
+        # different voltage ranges (LFP ~2.0-3.6V, NMC ~2.5-4.2V per
+        # Prada2013/Chen2020), so a bin near either ceiling can be ~0%
+        # populated for one chemistry while well-populated for the other.
+        # ml_pipeline.py's SimpleImputer(strategy='median') then fills every
+        # one of that chemistry's rows in the bin with an identical constant
+        # derived from the other chemistry's real values -- a trivial
+        # "does this feature equal that exact constant?" split lets a tree
+        # use the bin as a disguised chemistry indicator instead of learning
+        # real dV/dQ shape, inflating accuracy without genuine signal.
+        # Requiring both chemistries to have real (non-imputed) values at
+        # least min_chemistry_coverage of the time keeps only bins where
+        # both chemistries contribute genuine, varying measurements.
+        coverage_by_chem = step_subset.groupby('Chemistry')[feat_cols].apply(lambda g: g.notna().mean())
+        one_sided_cols = [c for c in feat_cols if (coverage_by_chem[c] < min_chemistry_coverage).any()]
+        step_subset = step_subset.drop(columns=one_sided_cols)
+        feat_cols = [c for c in feat_cols if c not in one_sided_cols]
 
         out_name = os.path.join(output_dir, f"ml_features_{n}_steps.csv")
         step_subset.to_csv(out_name, index=False)
