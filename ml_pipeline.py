@@ -340,9 +340,9 @@ def run_ml_pipeline(
     plt.tight_layout()
     plt.show()
 
-    # Returned as a dict (rather than just best_model) so callers like
-    # run_soc_sweep.py can pull individual-model accuracies and feature
-    # importances programmatically instead of scraping stdout.
+    # Returned as a dict (rather than just best_model) so calling code can
+    # pull individual-model accuracies and feature importances
+    # programmatically instead of scraping stdout.
     return {
         "best_model": best_model,
         "best_model_name": best_model_name,
