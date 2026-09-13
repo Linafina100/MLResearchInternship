@@ -13,9 +13,7 @@ from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-# Trained-model artifacts (joblib models/scaler/imputer/encoder + the feature
-# name list) all live together in one folder, separate from the CSV data
-# under data/, so deployment only needs to ship this one directory.
+# Directory for trained ML artifacts (models, scalers, encoders, feature lists).
 MODELS_DIR = os.environ.get("MODELS_DIR", "models")
 
 
@@ -34,18 +32,13 @@ def run_ml_pipeline(
     """
     df = pd.read_csv(synthetic_csv)
 
-    # Feature columns = anything not in metadata_cols (auto-picks up new
-    # engineered features). Target_Capacity_Ah/N_Steps excluded too --
-    # capacity must stay uninformative about chemistry per the article's
-    # design. Fine-tuning instead reuses Phase 1's saved feature_names.json
-    # for column alignment, padding any bin this data lacks with NaN so
-    # positions don't shift.
+    # Features = everything not in metadata_cols. 
+    # Target capacity and metadata/text columns (like Base_Parameter_Set) 
+    # are excluded to prevent leakage or breaking numeric ML models.
+    # Fine-tuning uses feature_names.json to align columns, padding missing bins with NaN.
     metadata_cols = [
         'Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC',
         'Target_Capacity_Ah', 'N_Steps',
-        # Carried through from feature_engineering.py for analysis only --
-        # not real features, and Base_Parameter_Set is a string column that
-        # would break the numeric imputer/scaler.
         'Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set',
     ]
     feature_names_path = os.path.join(MODELS_DIR, "feature_names.json")
@@ -64,13 +57,7 @@ def run_ml_pipeline(
     print(f"Identified {len(feature_cols)} feature columns for training.")
 
     if not feature_cols:
-        # At a narrow enough SOC/voltage range, feature_engineering.py's
-        # min_chemistry_coverage filter can legitimately drop every voltage
-        # bin (neither chemistry reaches a genuinely shared one) -- this is
-        # a real "no usable signal here" outcome, not an error condition,
-        # but sklearn's imputer/scaler raise an opaque
-        # "at least one array or dtype is required" on a zero-column array
-        # if allowed to proceed. Report it plainly instead.
+        # Returns an empty result dict so the pipeline can safely move on.
         print("No feature columns available -- skipping training (no usable signal at this configuration).")
         le = LabelEncoder()
         classes = list(le.fit(df['Chemistry']).classes_)
@@ -170,12 +157,9 @@ def run_ml_pipeline(
         n_new_estimators = 50
 
         if isinstance(best_model, XGBClassifier):
-            # xgb_model= continuation validates that the new training data's
-            # feature names match what the booster was originally fit on.
-            # X_train_scaled is a plain ndarray (imputer/scaler strip column
-            # names), which matches how this pipeline always fits models --
-            # if a baseline is ever fit on a named DataFrame instead, this
-            # will raise "training data did not have the following fields".
+            # xgb_model= continuation verifies that training features match the original model. 
+            # X_train_scaled is a plain ndarray (imputer/scaler strip column names), 
+            # which avoids strict XGBoost name-matching errors and relies purely on positional alignment.
             booster = best_model.get_booster()
             best_model.n_estimators = n_new_estimators  # additional boosting rounds for THIS fit() call
             best_model.fit(X_train_scaled, y_train, xgb_model=booster)
