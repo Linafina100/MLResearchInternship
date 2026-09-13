@@ -26,47 +26,26 @@ def run_ml_pipeline(
     save_artifacts: bool = True
 ):
     """
-    Parameters:
-    synthetic_csv : Path to the feature-engineered dataset generated from PyBaMM simulations.
-    real_csv (optional): Path to experimental factory test data. If provided, models will train on
-    synthetic data and test exclusively on real data (Sim-to-Real).
-    pretrained_model_path (optional): Path to a Phase 1 .joblib model to warm-start/fine-tune
-    instead of training from scratch. When set, the matching feature_names.json,
-    feature_scaler.joblib, feature_imputer.joblib, and label_encoder.joblib (saved alongside
-    it by a prior save_artifacts=True run) are loaded too, so Phase 2 data goes through the
-    exact same feature ordering and preprocessing the base model was trained under.
-    save_artifacts :If True, dumps the best model, scaler, and feature list for recycling plant deployment.
+    synthetic_csv: feature CSV to train/evaluate on.
+    real_csv: optional real experimental test set (sim-to-real mode).
+    pretrained_model_path: optional Phase 1 model to warm-start/fine-tune
+        (loads its matching scaler/imputer/encoder/feature list too).
+    save_artifacts: persist the trained model + preprocessing to MODELS_DIR.
     """
     df = pd.read_csv(synthetic_csv)
 
-    """
-    1. DYNAMIC FEATURE SELECTION
-    Instead of hardcoding 'col.startswith("dV_dQ_step_")', we drop known metadata.
-    This ensures any new features added in feature engineering (e.g., rest voltage,
-    internal resistance, temperature) are automatically included.
-    We remove metadata columns that are not features: Battery_ID, Chemistry, Size_Multiplier,
-    SOH, Initial_SOC so that the model cant "cheat" by using labels.
-    Target_Capacity_Ah and N_Steps are excluded too: the paper deliberately varies cell
-    capacity across all chemistries so that chemistry identification cannot be shortcut
-    via capacity ("To ensure that the cathode chemistries are not identified by their
-    different cell capacities..."). Leaving Target_Capacity_Ah in X would let the model
-    do exactly that. N_Steps is constant within any single per-step-count CSV, so it
-    carries no information anyway, but it's metadata, not a physical feature.
-
-    When fine-tuning, feature ordering is instead loaded from the Phase 1 run's
-    feature_names.json so Phase 2 data lines up with what the base model was
-    trained on -- any Phase 1 feature absent from this Phase 2 dataset (e.g. a
-    SOC bin the truncated real-world data never reaches) is added as an all-NaN
-    column so the imputer can still fill it, rather than shifting every other
-    column's position.
-    """
+    # Feature columns = anything not in metadata_cols (auto-picks up new
+    # engineered features). Target_Capacity_Ah/N_Steps excluded too --
+    # capacity must stay uninformative about chemistry per the article's
+    # design. Fine-tuning instead reuses Phase 1's saved feature_names.json
+    # for column alignment, padding any bin this data lacks with NaN so
+    # positions don't shift.
     metadata_cols = [
         'Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC',
         'Target_Capacity_Ah', 'N_Steps',
-        # Carried through from feature_engineering_advanced.py for analysis
-        # only (e.g. checking the voltage-bin separation per base parameter
-        # set or temperature) -- not real features, and Base_Parameter_Set
-        # is a string column that would break the numeric imputer/scaler.
+        # Carried through from feature_engineering.py for analysis only --
+        # not real features, and Base_Parameter_Set is a string column that
+        # would break the numeric imputer/scaler.
         'Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set',
     ]
     feature_names_path = os.path.join(MODELS_DIR, "feature_names.json")
@@ -107,46 +86,25 @@ def run_ml_pipeline(
     X = df[feature_cols].copy()
     y = df['Chemistry'].copy()
 
-    """
-    2. INFINITIES & MISSING STEPS
-    During resting intervals, transition phases or measurement delays, current may stop
-    or the sensor reading might not register a change in capacity => Q=0. Division by
-    zero (dQ -> 0) creates +/- inf; when the scaler etc. is applied this makes the
-    entire column mean become inf => value error and the model crashes.
-    => So we convert them directly to NaNs.
+    # dQ->0 during rests creates +-inf in dV/dQ; convert to NaN. A real
+    # dV/dQ of exactly 0.0 (e.g. LFP's plateau) is genuine signal and must
+    # NOT be treated as missing.
+    X.replace([np.inf, -np.inf], np.nan, inplace=True)
 
-    Note: feature_engineering_advanced.py no longer zero-pads missing entries. A
-    battery that never reaches a given SOC bin (or hits an early voltage cutoff)
-    simply has fewer dV_dQ_SOC_* keys, and pandas naturally fills the missing
-    columns with NaN when the rows are combined into a DataFrame. So NaN already
-    correctly means "missing/unreached" here, and a real dV/dQ value of exactly
-    0.0 (e.g. from the LFP plateau) is genuine physical signal, not a missing-data
-    artifact — it must NOT be overwritten with NaN.
-    """
-    X.replace([np.inf, -np.inf], np.nan, inplace=True) #convert +/- into NaN
-
-    """
-    3. LABEL ENCODING
-    Convert text labels (LFP, NMC) to numeric (0, 1) for model training.
-    When fine-tuning, reuse the Phase 1 encoder instead of fitting a new one --
-    a freshly-fit encoder could assign LFP/NMC to different integers than the
-    base model was trained against, silently swapping the classes.
-    """
+    # Encode LFP/NMC to 0/1. Fine-tuning reuses the Phase 1 encoder so
+    # classes can't silently swap.
     if pretrained_model_path and os.path.exists(label_encoder_path):
         le = joblib.load(label_encoder_path)
         y_encoded = le.transform(y)
     else:
-        le = LabelEncoder() #so that we can later convert back to text labels for confusion matrix and classification report
+        le = LabelEncoder()
         y_encoded = le.fit_transform(y)
-    classes = list(le.classes_) #preserves mapping internally as an array for later reference
+    classes = list(le.classes_)
     print(f"Target classes mapped: {dict(zip(classes, range(len(classes))))}")
 
-    """
-    4. SPLIT SEPARATION (SIMULATION VS. REAL EXPERIMENTAL DATA)
-    If real experimental data is provided, we will train on synthetic data and test exclusively on real data.
-    If no real data is provided, we will perform a stratified train-test split on the synthetic data to evaluate model performance.
-    """
-
+    # real_csv given -> train on sim, test on real (sim-to-real). Otherwise
+    # an 80/20 stratified GROUP split (grouped by Battery_ID so no
+    # battery's samples leak across train/test).
     if real_csv is not None:
         print(f"\n--> [Step 2] Loading real experimental test set from: {real_csv}")
         df_real = pd.read_csv(real_csv)
@@ -159,9 +117,6 @@ def run_ml_pipeline(
         y_test = le.transform(df_real['Chemistry'])
         print(f"Sim-to-Real split: {len(X_train)} synthetic train samples | {len(X_test)} real test samples.")
     else:
-        # If no real data is provided yet, use a Stratified Grouped Split on simulation data.
-        # Grouping by Battery_ID prevents augmented/sliced battery cycles from leaking into test
-        # (each battery's samples land entirely in either train or test, never split across both).
         print("\n--> [Step 2] Performing ~80/20 Stratified Group Split on synthetic data...")
         groups = df['Battery_ID'].values
         sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
@@ -171,22 +126,10 @@ def run_ml_pipeline(
         y_train, y_test = y_encoded[train_idx], y_encoded[test_idx]
         print(f"Split completed: {len(X_train)} train samples | {len(X_test)} test samples.")
 
-    """
-    5. PREPROCESSING
-    We fit strictly on X_train to avoid data leakage, then transform X_test.
-    a) Outlier clipping: Clip extreme values to the 1st and 99th percentiles to
-    reduce the influence of outliers. At the very beginning and end of the pulse,
-    the current may not have stabilized yet, which can create extreme dV/dQ values
-    that are not representative of the chemistry.
-    b) Median imputation: Fill NaN values with the median of each feature column.
-    c) Feature standardization: Scale features to have zero mean and unit variance.
-    Not that important for the current models, but good practice for future models (e.g., SVM, Neural Networks).
-
-    When fine-tuning, reuse the Phase 1 imputer/scaler instead of fitting new
-    ones on Phase 2 data -- the base model's trees split on the specific scale
-    it was trained under, so refitting here would shift that scale out from
-    under it rather than genuinely warm-starting it.
-    """
+    # Fit only on X_train to avoid leakage: clip outliers to the 1st/99th
+    # percentile (pulse start/end can be unstable), median-impute,
+    # standardize. Fine-tuning reuses Phase 1's imputer/scaler instead of
+    # refitting, to keep the base model's trained scale intact.
     if (
         pretrained_model_path
         and os.path.exists(feature_imputer_path)
@@ -199,39 +142,24 @@ def run_ml_pipeline(
         X_train_scaled = scaler.transform(X_train_imputed)
         X_test_scaled = scaler.transform(X_test_imputed)
     else:
-        #a) Outlier Clipping
         lower_bound = X_train.quantile(0.01)
         upper_bound = X_train.quantile(0.99)
         X_train_clipped = X_train.clip(lower=lower_bound, upper=upper_bound, axis=1)
         X_test_clipped = X_test.clip(lower=lower_bound, upper=upper_bound, axis=1)
 
-        #b) Median imputer
         imputer = SimpleImputer(strategy='median')
         X_train_imputed = imputer.fit_transform(X_train_clipped)
         X_test_imputed = imputer.transform(X_test_clipped)
 
-        #c)Feature standardization
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train_imputed)
         X_test_scaled = scaler.transform(X_test_imputed)
 
-    """
-    6/7. MODEL TRAINING, OR FINE-TUNING A PHASE 1 MODEL
-    Standard mode trains and compares two tree-based ensemble models: Random
-    Forest and XGBoost, with hyperparameters set to reasonable defaults.
-
-    Fine-tuning mode loads a Phase 1 model and warm-starts it with 50 new
-    estimators trained on Phase 2 data, instead of training from scratch.
-    Note the two libraries' "how many more trees" semantics differ:
-    - RandomForestClassifier's warm_start=True treats n_estimators as the NEW
-      TOTAL to grow toward, so incrementing it by 50 relative to what the
-      loaded model already has correctly adds exactly 50 new trees.
-    - XGBClassifier's xgb_model=<existing booster> continues boosting for
-      n_estimators MORE rounds on top of the passed-in booster -- it is not a
-      new total. Incrementing it by 50 the same way as RandomForest would
-      train far more than 50 additional trees (150+50=200 extra, not 50), so
-      it's set directly to 50 here instead.
-    """
+    # Standard mode: train+compare RF and XGBoost from scratch. Fine-tuning:
+    # warm-start 50 more trees onto a saved Phase 1 model -- RF's
+    # n_estimators is a NEW TOTAL (increment it), XGBoost's is boosting
+    # rounds ON TOP of the existing booster (set directly to 50, don't
+    # increment).
     print("\n" + "=" * 45)
     print("MODEL PERFORMANCE COMPARISON")
     print("=" * 45)
@@ -316,12 +244,7 @@ def run_ml_pipeline(
     print(f"Detailed Classification Report ({best_model_name}):")
     print(classification_report(y_test, best_preds, target_names=classes))
 
-    """
-    8. PERSISTENCE
-    Save the best model, scaler, imputer, label encoder, and feature names for future deployment in a factory setting.
-    Kanske inte viktigt att spara label encoder och feature names om man inte ska köra modellen på nya data, 
-    men kan vara bra att ha om man vill köra modellen på nya data i framtiden.
-    """
+    # Save model + preprocessing + feature list for deployment.
     if save_artifacts:
         os.makedirs(MODELS_DIR, exist_ok=True)
         joblib.dump(best_model, os.path.join(MODELS_DIR, "best_battery_classifier.joblib"))
@@ -332,10 +255,7 @@ def run_ml_pipeline(
             json.dump(feature_cols, f)
         print("Pipeline artifacts saved: model, scaler, imputer, label encoder, and feature names.")
 
-    """
-    9. VISUALIZATION (CONFUSION MATRIX & FEATURE IMPORTANCES)
-    """
-
+    # Confusion matrix + feature-importance plot.
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     # Confusion Matrix
     cm = confusion_matrix(y_test, best_preds)
@@ -360,9 +280,8 @@ def run_ml_pipeline(
     plt.tight_layout()
     plt.show()
 
-    # Returned as a dict (rather than just best_model) so calling code can
-    # pull individual-model accuracies and feature importances
-    # programmatically instead of scraping stdout.
+    # Dict (not just best_model) so callers can pull per-model
+    # accuracy/importances without scraping stdout.
     return {
         "best_model": best_model,
         "best_model_name": best_model_name,

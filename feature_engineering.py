@@ -20,36 +20,21 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         output_dir = _default_features_dir(input_csv)
     os.makedirs(output_dir, exist_ok=True)
     
-    # Group each independent simulation run. Variation_ID is included because
-    # SOH is stored rounded to 3 decimals, so two distinct random variations
-    # (drawn independently per size in simulate_batteries.py) can round to the
-    # identical SOH -- without Variation_ID those would silently collide into
-    # the same Battery_ID, merging two unrelated runs' overlapping timestamps
-    # together and corrupting both their features.
+    # Variation_ID included because SOH is rounded to 3 decimals, so distinct
+    # draws can round-collide; without it they'd merge into one Battery_ID
+    # and corrupt both batteries' features.
     groupby_cols = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'N_Steps', 'Variation_ID']
     df['Battery_ID'] = df.groupby(groupby_cols).ngroup()
     
     all_features = []
     
-    # simulate_batteries.py builds each battery's protocol as N_Steps repeats of
-    # ("Discharge ... for 30 minutes", "Rest for 1 hour") -> exactly 5400 s per
-    # step, independent of N_Steps (only the pulse current changes). PyBaMM
-    # concatenates each named sub-condition's own sub-solution and duplicates
-    # the shared boundary timestamp across the join: once as the trailing point
-    # of the ending condition, once as the leading point of the next. So the
-    # true end-of-relaxation OCV for step k appears at Time == k * STEP_DURATION_S,
-    # recorded TWICE — the first occurrence is the still-relaxed voltage, the
-    # second already reflects the next pulse's abrupt IR-drop as current
-    # switches back on, and must be excluded.
-    #
-    # Sampling *density* between boundaries varies hugely with cell age/size —
-    # a heavily aged cell can be densely sampled throughout its entire pulse
-    # and rest, while a fresh cell needs almost no points once settled — so
-    # neither "capacity is locally flat" nor "the next time gap is unusually
-    # large" reliably distinguishes a genuine step boundary from an ordinary
-    # internal sample (both approaches were tried and broke on real batteries).
-    # The one thing that's always true, regardless of sampling density, is
-    # that a real step boundary sits at an exact multiple of STEP_DURATION_S.
+    # Each step is exactly STEP_DURATION_S long. PyBaMM duplicates the boundary
+    # timestamp (the still-relaxed value, then the post-jump value after the
+    # next pulse starts) -- take the first occurrence. Boundary time is the
+    # only reliable signal for a step edge: sampling density varies hugely
+    # with cell age/size, so "capacity is flat" or "time gap is large"
+    # (both tried) don't reliably distinguish a real boundary from a normal
+    # internal sample.
     PULSE_DURATION_S = 30 * 60   # matches PULSE_DURATION in simulate_batteries.py
     REST_DURATION_S = 60 * 60    # matches REST_DURATION in simulate_batteries.py
     STEP_DURATION_S = PULSE_DURATION_S + REST_DURATION_S
@@ -57,26 +42,18 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
                                   # far below the >=0.1 s gap to the next real
                                   # sample after a boundary
 
-    # Absolute terminal-voltage bins, not SOC bins. A real used cell pulled
-    # off the line has no known SOC without already knowing its chemistry
-    # (and remaining capacity) -- that's the target variable, so keying
-    # features on computed SOC is unusable at inference time. Voltage is
-    # exactly what a GITT pulse test measures directly, with no dependency
-    # on Target_Capacity_Ah/Initial_SOC (both simulation-only ground truth
-    # that a real cell doesn't have). The range is a superset of both
-    # chemistries' plausible terminal-voltage span (LFP ~2.0-3.6 V, NMC
-    # ~2.5-4.2 V per Chen2020/Prada2013) with margin; bins outside what a
-    # chemistry ever actually reaches are dropped per step-count below, the
-    # same way unreached SOC bins were dropped before.
+    # Absolute voltage bins, not SOC: SOC needs already knowing
+    # chemistry/capacity -- the target itself. Range (1.9-4.3V) covers both
+    # chemistries' plausible span with margin; bins a chemistry never
+    # reaches get dropped below.
     V_BIN_MIN = 1.9
     V_BIN_MAX = 4.3
     V_BIN_WIDTH = 0.1
 
     for battery_id, group in df.groupby('Battery_ID'):
-        # kind='stable' matters here: at an exact step boundary, the relaxed
-        # point and the post-jump point share an identical timestamp, and we
-        # rely on their original solve-time order (relaxed first) to tell
-        # them apart below.
+        # 'stable' sort matters: at a step boundary the relaxed and
+        # post-jump points share a timestamp, and we rely on solve order
+        # (relaxed first) to tell them apart.
         group = group.sort_values('Time [s]', kind='stable').reset_index(drop=True)
         n_steps = int(group['N_Steps'].iloc[0])
         times = group['Time [s]'].values
@@ -107,11 +84,9 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         # Keep only valid intervals where capacity actually advanced
         valid = (dQ > 1e-5)
 
-        # Sanity check: aborted pulses (voltage cutoff hit) should only ever
-        # truncate the END of the sequence. If an invalid interval is followed
-        # by a valid one, enumerate() below would renumber the remaining steps
-        # and dV_dQ_step_N would no longer refer to the same physical pulse
-        # across batteries, silently breaking positional feature alignment.
+        # Aborted pulses (voltage cutoff hit) should only ever truncate the
+        # END of a battery's sequence -- a valid transition after an invalid
+        # one would break positional indexing below.
         valid_tail = valid.values[1:]  # index 0 is always NaN/False (no prior point)
         invalid_positions = np.where(~valid_tail)[0]
         if invalid_positions.size > 0:
@@ -132,10 +107,9 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
             'Initial_SOC': group['Initial_SOC'].iloc[0],
             'N_Steps': int(group['N_Steps'].iloc[0]),
         }
-        # Carried through for analysis/debugging only (e.g. checking whether
-        # the voltage-bin separation holds up per base parameter set or
-        # temperature); ml_pipeline_future.py's metadata_cols excludes these
-        # from the actual feature matrix.
+        # Carried through for analysis only (e.g. checking separation per
+        # parameter set/temperature); ml_pipeline.py excludes these from the
+        # actual feature matrix.
         for optional_col in ('Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set'):
             if optional_col in group.columns:
                 battery_features[optional_col] = group[optional_col].iloc[0]
@@ -150,15 +124,9 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         for bin_name in voltage_bins:
             battery_features[bin_name] = np.nan
 
-        # Map each valid dV/dQ transition to the absolute terminal-voltage
-        # range it ends in. Phase 1's dV_dQ_step_N was positional (which
-        # pulse number), which real-world truncated discharge data can't
-        # reproduce (a partial factory pull doesn't know it was "pulse 7 of
-        # 15"). Phase 2 anchored bins to computed SOC instead, but a real
-        # used cell's SOC can't be computed without already knowing its
-        # chemistry and true capacity -- both the target variable and an
-        # unmeasured quantity for an unidentified cell. Voltage is what the
-        # pulse test actually measures, directly, with no such dependency.
+        # Bin by absolute voltage, not pulse position or SOC -- positional
+        # bins can't handle truncated real-world data, SOC bins need the
+        # target variable itself (see rationale above).
         for idx in dV[valid].index:
             dv_val = dV.loc[idx]
             dq_val = dQ.loc[idx]
@@ -185,13 +153,8 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
     for n in step_counts:
         step_subset = full_df[full_df['N_Steps'] == n].copy()
 
-        # All voltage-bin columns are pre-initialized for every battery
-        # regardless of N_Steps, so a bin is only ever entirely NaN for a
-        # given step count if that protocol's coarser per-pulse capacity
-        # (or a chemistry's voltage range) never actually lands a transition
-        # inside it -- drop those so ml_pipeline.py's feature_cols stays in
-        # sync with the model's real trained input width (see the analogous
-        # issue this fixed for the old positional dV_dQ_step_* columns).
+        # Drop bins entirely unreached at this step count so feat_cols
+        # matches the model's real trained width.
         all_v_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_V_')]
         empty_v_cols = [c for c in all_v_cols if step_subset[c].isna().all()]
         step_subset = step_subset.drop(columns=empty_v_cols)
@@ -199,19 +162,10 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         # Find all valid voltage bin columns for this step count
         feat_cols = [c for c in step_subset.columns if c.startswith('dV_dQ_V_')]
 
-        # Drop bins that only ONE chemistry ever reaches. LFP and NMC have
-        # different voltage ranges (LFP ~2.0-3.6V, NMC ~2.5-4.2V per
-        # Prada2013/Chen2020), so a bin near either ceiling can be ~0%
-        # populated for one chemistry while well-populated for the other.
-        # ml_pipeline.py's SimpleImputer(strategy='median') then fills every
-        # one of that chemistry's rows in the bin with an identical constant
-        # derived from the other chemistry's real values -- a trivial
-        # "does this feature equal that exact constant?" split lets a tree
-        # use the bin as a disguised chemistry indicator instead of learning
-        # real dV/dQ shape, inflating accuracy without genuine signal.
-        # Requiring both chemistries to have real (non-imputed) values at
-        # least min_chemistry_coverage of the time keeps only bins where
-        # both chemistries contribute genuine, varying measurements.
+        # Drop bins only one chemistry ever reaches: SimpleImputer's
+        # median-fill would otherwise give every row of the missing
+        # chemistry an identical constant -- a trivial giveaway, not real
+        # signal. Full writeup: experiments/01_leakage_fix_20_percent_coverage/RESULTS.md.
         coverage_by_chem = step_subset.groupby('Chemistry')[feat_cols].apply(lambda g: g.notna().mean())
         one_sided_cols = [c for c in feat_cols if (coverage_by_chem[c] < min_chemistry_coverage).any()]
         step_subset = step_subset.drop(columns=one_sided_cols)
@@ -256,8 +210,7 @@ def plot_all_voltage_bin_profiles(datasets):
         y_lfp = lfp_sample[feature_cols].astype(float).dropna()
         y_nmc = nmc_sample[feature_cols].astype(float).dropna()
 
-        # x-axis is the voltage this bin discharged INTO (the "_high"
-        # boundary, e.g. "dV_dQ_V_3.8_3.7" -> 3.8), so points read
+        # x-axis is the voltage this bin discharged INTO, so points read
         # left-to-right as discharge progresses once the axis is inverted
         # below.
         x_lfp = [float(col.split('_')[-2]) for col in y_lfp.index]
@@ -282,7 +235,6 @@ def plot_all_voltage_bin_profiles(datasets):
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.legend()
 
-    #plt.tight_layout()
     plt.show()
 
 
