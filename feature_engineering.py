@@ -71,6 +71,7 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         # Ensure that if a battery hits a voltage cutoff and aborts a pulse, 
         # the failure only occurs at the very end of the test sequence. 
         # A mid-sequence failure followed by a "valid" step would break positional indexing
+        valid_tail = valid.values[1:]
         invalid_positions = np.where(~valid_tail)[0]
         if invalid_positions.size > 0:
             first_invalid = invalid_positions[0]
