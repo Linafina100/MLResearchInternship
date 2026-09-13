@@ -9,12 +9,10 @@ import matplotlib.pyplot as plt
 random.seed(42)
 np.random.seed(42)
 
-# --- FOR SOC SWEEP RUNS ---
-
-# Initial SOC for the battery. Overridable via environment variables.
-# By default, it sets a fixed starting point (e.g., 100% charge).
-# run_soc_sweep.py overrides this to test performance at specific start-charge levels.
-INITIAL_SOC = float(os.environ.get("INITIAL_SOC", 1.0))
+# Starting-SOC range, overridable via env vars so sweep scripts can test
+# different SOC availability without duplicating this file's setup.
+SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
+SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
 
 # ---- CREATING STRUCTURE FOR FILES ---
 
@@ -152,8 +150,7 @@ print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
-        # Overridable via environment variables for automated SOC sweeps.
-        soc = INITIAL_SOC
+        soc = random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX)
         soh = random.uniform(0.50, 0.85)
 
         # Randomize ambient temperature (0-35°C). 
