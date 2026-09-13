@@ -84,6 +84,26 @@ def run_ml_pipeline(
         feature_cols = [col for col in df.columns if col not in metadata_cols]
     print(f"Identified {len(feature_cols)} feature columns for training.")
 
+    if not feature_cols:
+        # At a narrow enough SOC/voltage range, feature_engineering.py's
+        # min_chemistry_coverage filter can legitimately drop every voltage
+        # bin (neither chemistry reaches a genuinely shared one) -- this is
+        # a real "no usable signal here" outcome, not an error condition,
+        # but sklearn's imputer/scaler raise an opaque
+        # "at least one array or dtype is required" on a zero-column array
+        # if allowed to proceed. Report it plainly instead.
+        print("No feature columns available -- skipping training (no usable signal at this configuration).")
+        le = LabelEncoder()
+        classes = list(le.fit(df['Chemistry']).classes_)
+        return {
+            "best_model": None,
+            "best_model_name": "(no usable features)",
+            "best_accuracy": None,
+            "model_accuracies": {},
+            "feature_importances": {},
+            "classes": classes,
+        }
+
     X = df[feature_cols].copy()
     y = df['Chemistry'].copy()
 

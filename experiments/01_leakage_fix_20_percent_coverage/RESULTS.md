@@ -106,3 +106,48 @@ for 10+ pulse steps, not the ~100% originally reported. The natural next
 step is restoring accuracy with *legitimately* shared signal (e.g.
 resistance/IR-drop features, or additional bins combined with an explicit
 "reached this bin" indicator) rather than relying on one voltage bin alone.
+
+## Follow-up: does the fix hold up across SOC availability?
+
+The original SOC-availability sweep (`run_soc_sweep.py`, now deleted) found
+accuracy was *worst* at the high-SOC interval (0.7-1.0: RF 98.96%/XGB
+94.79%) and near-perfect (100%/100%) at the two middle intervals — but that
+was measured on the leaky voltage-bin features above, so it mostly reflects
+how much of the one-sided/leaky bins each SOC range happened to populate,
+not genuine physics. Re-running the same 4-interval sweep
+(`soc_sweep.py`, this folder) with the coverage-filtered features gives a
+very different, and much more informative, picture:
+
+| SOC Interval | RF Accuracy | XGB Accuracy | Surviving Bin(s) |
+|---|---|---|---|
+| 0.7-1.0 | 96.88% | 94.79% | `dV_dQ_V_3.4_3.3` |
+| 0.5-0.8 | 83.33% | 83.33% | `dV_dQ_V_3.4_3.3` |
+| 0.3-0.6 | — | — | **none** (filter dropped every bin) |
+| 0.1-0.4 | 71.28% | 73.40% | `dV_dQ_V_3.3_3.2` |
+
+Two findings worth flagging:
+
+1. **Accuracy degrades monotonically as SOC drops** (96.9% → 83.3% → n/a →
+   71.3%/73.4%), the opposite shape from the original (leaky) sweep, and
+   the intuitive one — less of the shared voltage range gets sampled at
+   lower SOC, so there's less honest signal to classify on.
+2. **The one surviving bin isn't the same bin across intervals.** At
+   0.7-1.0 and 0.5-0.8 it's `dV_dQ_V_3.4_3.3`; at 0.3-0.6 the >20%
+   mutual-coverage filter drops *every* bin (neither chemistry reliably
+   reaches a shared one at that narrower range, so there's no feature left
+   to train on at all — `ml_pipeline.py` was hardened during this run to
+   report that plainly instead of crashing on a zero-column array, see
+   below); at 0.1-0.4 a *different* bin (`dV_dQ_V_3.3_3.2`) becomes the
+   sole survivor. The "one honest voltage bin" this project has been
+   relying on is not a fixed, universal feature — which is exactly the
+   arbitrary-missingness problem: a real Stena capture that happens to
+   land in the 0.3-0.6 window would have no usable signal under this
+   feature scheme at all.
+
+**Robustness fix made along the way:** `ml_pipeline.py`'s `run_ml_pipeline`
+now checks for zero remaining feature columns after
+`feature_engineering.py`'s coverage filter and returns a clear
+"no usable features" result instead of letting `SimpleImputer` fail with an
+opaque `ValueError: at least one array or dtype is required` on a
+zero-column array. This is a real, expected outcome at narrow enough SOC
+ranges, not an error condition.
