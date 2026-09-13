@@ -5,33 +5,25 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-# Fixed seed so a generation run (including which random SOH/size draws, if
-# any, fail to solve) is reproducible run-to-run instead of silently varying
-# every time, which previously made sample-count deficits impossible to
-# investigate after the fact.
+# Fixed seed: makes a run (including which draws fail to solve) reproducible for debugging.
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
-# Starting-SOC sampling interval, overridable via environment variables so
-# run_soc_sweep.py can drive systematic SOC-availability sweeps (simulating
-# how much of the OCV curve an end-of-life cell arriving at Stena actually
-# offers) without duplicating this script's physics setup. Defaults match
-# the standard 50-100% article-matching range used everywhere else.
+# Starting-SOC range, overridable via env vars so sweep scripts can test
+# different SOC availability without duplicating this file's setup.
+# Default 50-100% matches the article.
 SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
 SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
 
-# All generated data lives under data/<run_label>/<kind>/, so different runs
-# (the default standalone run vs. each run_soc_sweep.py interval) never
-# overwrite each other and files are easy to find by what produced them and
-# what they contain. RUN_LABEL defaults to "default" for a plain standalone
-# run; run_soc_sweep.py sets it per SOC interval (e.g. "soc_0.1-0.4").
+# All outputs live under data/<run_label>/<kind>/ so different runs and file
+# kinds never collide. RUN_LABEL defaults to "default"; sweep scripts
+# override it per run (e.g. "soc_0.1-0.4").
 DATA_DIR = os.environ.get("DATA_DIR", "data")
 RUN_LABEL = os.environ.get("RUN_LABEL", "default")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
-# Individual paths remain overridable so callers can pin an exact location
-# if ever needed, but default to the sorted-by-run/sorted-by-kind layout.
+# Individually overridable if an exact path is ever needed.
 OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))
 FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", os.path.join(RUN_DIR, "failures", "simulation_failures.csv"))
 PULSE_PLOT_PNG = os.environ.get("PULSE_PLOT_PNG", os.path.join(RUN_DIR, "plots", "pulse_discharge_plot.png"))
@@ -39,42 +31,25 @@ PULSE_PLOT_PNG = os.environ.get("PULSE_PLOT_PNG", os.path.join(RUN_DIR, "plots",
 for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, PULSE_PLOT_PNG):
     os.makedirs(os.path.dirname(_output_path), exist_ok=True)
 
-# Select the mathematical model (SPM). Deliberately isothermal, not PyBaMM's
-# lumped-thermal option: that submodel requires entropic-heat and cell
-# geometry parameters that Prada2013 (LFP) never defines, and even for
-# Chen2020 (NMC) the isothermal model's Arrhenius kinetics are not wired to
-# "Ambient temperature [K]" outside the thermal submodel (verified: sweeping
-# 0-35 C produced byte-identical voltage output). Rather than force the
-# thermal submodel and guess at LFP-specific entropic-heat data borrowed
-# from an unrelated chemistry -- which would be actively misleading, not
-# just approximate -- temperature's dominant real effect (higher internal
-# resistance when cold) is applied explicitly below via TEMP_RESISTANCE_COEFF.
+# Isothermal SPM: the thermal submodel needs entropic-heat data Prada2013
+# doesn't define, and doesn't actually wire ambient temperature into
+# kinetics anyway (verified: sweeping 0-35C gave identical output).
+# Temperature's real effect is applied manually below via
+# TEMP_RESISTANCE_COEFF instead.
 model = pybamm.lithium_ion.SPM()
 
-# Load default chemical parameters. NMC is pooled across three independent
-# literature parameter sets (not just Chen2020) so the model can't memorize
-# one fixed OCP curve as a chemistry signature -- see NMC_PARAMETER_SETS
-# below. ORegan2022 was also considered but excluded: its positive electrode
-# conductivity is a temperature-dependent function, not a scalar, so it's
-# incompatible with the *= scaling used for capacity/resistance below.
+# NMC pooled across 3 parameter sets so the model can't memorize one OCP
+# curve as a chemistry tell. ORegan2022 excluded: its conductivity is a
+# function, not a scalar, incompatible with the *= scaling below.
 param_lfp_base = pybamm.ParameterValues("Prada2013")
 NMC_PARAMETER_SETS = ["Chen2020", "Mohtat2020", "OKane2022"]
 param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
 param_nmc_base = param_nmc_bases["Chen2020"]  # reference for capacity_multipliers below
 
-# Pulse discharge (GITT) from the article, green/yellow identification interval:
-# total discharged capacity is fixed at ΔQ = 0.6 Ah (half of the assumed
-# minimum 18650 capacity of 1.2 Ah), independent of the actual cell size,
-# each pulse lasts 0.5 h and is followed by a 1 h rest. The per-step current
-# is I = 0.6 Ah / n_steps / 0.5 h, which reproduces the article's stated
-# value of 80 mA for 15 steps, and gives 240/120/60/48 mA for 5/10/20/25
-# steps respectively. All of these are <=0.2C for the smallest (1.2 Ah)
-# reference cell, i.e. "generally small values" as required by the article
-# so the terminal voltage stays inside the feasible green/yellow measurement
-# zone ([max(Vmin)-0.2V, min(Vmax)+0.2V] = [2.3V, 3.8V] for LFP/NMC, Sec. 2)
-# instead of overshooting into the orange/red (deep-discharge/overcharge)
-# zones during a pulse.
-# Nominal lower voltage limits (article Sec. 2): LFP 2.0 V, NMC 2.5 V.
+# GITT protocol from the article: total discharge dQ=0.6Ah split evenly
+# across n_steps pulses (0.5h each + 1h rest) keeps current <=0.2C and
+# voltage inside the feasible measurement zone. Lower cutoffs (article
+# Sec. 2): LFP 2.0V, NMC 2.5V.
 TOTAL_PULSE_CAPACITY_AH = 0.6
 PULSE_DURATION = "30 minutes"
 PULSE_DURATION_HOURS = 0.5
@@ -151,17 +126,10 @@ def solve_with_cutoff(sim, initial_soc, chem, n_steps, context=""):
     return sol
 
 
-# Target cell capacities from the article (Sec. 3): "the electrode geometries
-# are adjusted to different capacities for training purposes, i.e., 1.2 Ah,
-# 2 Ah, and 3.5 Ah, covering the common capacity range of 18650 cells."
-# LFP (Prada2013, base ~2.3 Ah) and NMC (base ~5.0 Ah -- confirmed identical
-# across all three pooled NMC_PARAMETER_SETS) have very different base
-# capacities, so a single shared thickness multiplier does not land both
-# chemistries on the same target capacity. Instead, a per-chemistry
-# multiplier is derived from each base parameter set's own declared
-# "Nominal cell capacity [A.h]", so that both chemistries actually reach
-# ~1.2/2.0/3.5 Ah at each size step, keeping capacity itself uninformative
-# about chemistry (as intended by the article).
+# Target capacities from the article (1.2/2.0/3.5 Ah). LFP and NMC have very
+# different base capacities, so each gets its own thickness multiplier to
+# actually hit the same targets -- keeps capacity itself uninformative
+# about chemistry.
 CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
 
 
@@ -177,11 +145,8 @@ capacity_multipliers = {
     "NMC": capacity_multipliers_for(param_nmc_base, CAPACITY_TARGETS_AH),
 }
 
-# How many random variations to run per battery size. The article (Sec. 3)
-# generates 250 individual OCV samples per chemistry for each tested
-# capacity/step configuration. With 2 chemistries (LFP, NMC) and 3 capacity
-# sizes here, variations_per_size = 83 gives 3*83 = 249 samples per chemistry,
-# matching that target (~10 min runtime measured for the full sweep).
+# 83 variations x 3 sizes = 249 samples/chemistry, matching the article's
+# target of 250.
 variations_per_size = 83
 
 all_data = []
@@ -190,51 +155,23 @@ print("Starting advanced simulations (Pulse Discharge, Random SOC/SOH)...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
-        # SOC is randomized over [SOC_RANGE_MIN, SOC_RANGE_MAX], 50-100% by
-        # default, matching the article's own discharge-case sampling (Sec.
-        # 3: "uniformly distributed random values between 50% and 100% SOC
-        # for discharge"). run_soc_sweep.py overrides this range per run to
-        # test how much high-voltage data a cell's starting SOC provides.
-        # A previously fixed SOC (first 1.0, then 0.6) made every battery's pulse test
-        # start from the identical point on the OCV curve, which both (a)
-        # under-represented real-world variance and (b) is required now
-        # that features are keyed on absolute voltage bins instead of
-        # absolute SOC bins -- a fixed starting SOC would make each
-        # chemistry only ever populate a narrow, unrealistically
-        # consistent slice of the voltage range.
-        # SOH is randomized over 50-85%: Stena is a recycling facility, so
-        # the training population should reflect the degraded/end-of-life
-        # cells it will actually receive, not a healthier range that would
-        # never be seen at inference time (train/serve skew). Widened down
-        # from the previous 75-85% band per explicit domain guidance.
+        # SOC: uniform over the configurable range (default 50-100%,
+        # matching the article's own sampling). SOH: uniform 50-85%,
+        # matching Stena's degraded end-of-life population rather than a
+        # healthier range never seen at inference.
         soc = random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX)
         soh = random.uniform(0.50, 0.85)
 
-        # Ambient temperature at time of test, independent of SOH. Real
-        # degraded cells at the same nominal SOH don't all show the same
-        # resistance: different aging pathways (SEI growth vs. lithium
-        # plating vs. particle isolation vs. contact-resistance loss) and
-        # different ambient conditions in storage/transport produce
-        # different IR-drop behavior for the "same" capacity-based SOH.
-        # Applied explicitly via TEMP_RESISTANCE_COEFF below rather than
-        # PyBaMM's thermal submodel -- see the model-selection comment above.
+        # Ambient temperature, independent of SOH: real cells at equal SOH
+        # show different resistance depending on aging pathway and storage
+        # conditions. Applied via TEMP_RESISTANCE_COEFF below.
         ambient_c = random.uniform(0, 35)
-        TEMP_RESISTANCE_COEFF = 0.02  # ~2%/C conductivity change per degree
-                                       # from a 25 C reference; a conservative,
-                                       # commonly-cited order of magnitude for
-                                       # Li-ion internal resistance vs. temperature
+        TEMP_RESISTANCE_COEFF = 0.02  # ~2%/C, a conservative literature estimate
         temp_conductivity_multiplier = 1.0 + TEMP_RESISTANCE_COEFF * (ambient_c - 25.0)
 
-        # Globally unique id for this (size, variation) draw. SOH is stored
-        # rounded to 3 decimals, and with 83 random draws per size from only
-        # ~101 possible rounded values, collisions are near-certain (birthday
-        # paradox) -- two *different* variations can round to the identical
-        # SOH, and since Initial_SOC and Size_Multiplier are otherwise
-        # constant per size, that made them indistinguishable to every
-        # downstream (Chemistry, Size_Multiplier, SOH, Initial_SOC) groupby,
-        # silently merging independent simulation runs into one battery
-        # group. Variation_ID is unaffected by any rounding and guarantees
-        # each (size, i) draw stays its own identity everywhere downstream.
+        # Unique id per (size, variation) draw. SOH is stored rounded to 3
+        # decimals, so distinct draws can round-collide; Variation_ID keeps
+        # them distinct in every downstream groupby.
         variation_id = size_idx * variations_per_size + i
 
         # Pool NMC across independent literature parameter sets so the model
@@ -264,14 +201,11 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
 
-            # 2. Resistance growth: decoupled from SOH (not the same scalar),
-            # so cells at the same nominal SOH don't all show identical
-            # IR-drop -- see the ambient_c comment above. resistance_noise
-            # gives each chemistry's resistance growth its own independent
-            # draw (aging-pathway variance); temp_conductivity_multiplier
-            # applies the shared ambient-temperature effect; the result is
-            # clamped so conductivity never exceeds the un-aged baseline
-            # (>1.0) or collapses to a solver-destabilizing near-zero value.
+            # 2. Resistance growth: decoupled from SOH via an independent
+            # noise draw (aging-pathway variance) plus the shared
+            # ambient-temperature effect, clamped to [0.3, 1.0] to avoid
+            # exceeding the unaged baseline or a solver-destabilizing
+            # near-zero.
             resistance_noise = random.uniform(0.8, 1.2)
             resistance_factor = min(1.0, max(0.3, soh * resistance_noise * temp_conductivity_multiplier))
             resistance_factors[chem] = resistance_factor
@@ -316,29 +250,24 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
 
 # Combine and save
 training_data = pd.concat(all_data)
-output_file = OUTPUT_DATA_CSV
-training_data.to_csv(output_file, index=False)
-print(f"\nDone! Data with realistic pulses, SOC, and aging saved to '{output_file}'")
+training_data.to_csv(OUTPUT_DATA_CSV, index=False)
+print(f"\nDone! Data with realistic pulses, SOC, and aging saved to '{OUTPUT_DATA_CSV}'")
 
 # --- FAILURE SUMMARY ---
-# Surfaces exactly how much of the theoretical chemistries*sizes*variations
-# target was lost to solve failures, and why, instead of that deficit only
-# showing up later as an unexplained gap in the feature-engineered dataset.
+# How much of the theoretical target was lost to solve failures, and why.
 total_attempts = len(CAPACITY_TARGETS_AH) * variations_per_size * len(STEP_COUNTS) * len(LOWER_VOLTAGE_CUTOFF)
 print(f"\n{len(FAILURE_LOG)} of {total_attempts} solve attempts failed.")
 if FAILURE_LOG:
     failures_df = pd.DataFrame(FAILURE_LOG)
     print(failures_df["ExceptionType"].value_counts().to_string())
-    failure_log_file = FAILURE_LOG_CSV
-    failures_df.to_csv(failure_log_file, index=False)
-    print(f"Full failure log saved to '{failure_log_file}'")
+    failures_df.to_csv(FAILURE_LOG_CSV, index=False)
+    print(f"Full failure log saved to '{FAILURE_LOG_CSV}'")
 
 # --- PLOTTING ---
 # Plot one LFP and one NMC sample to visualize the pulse discharge
 print("Generating pulse discharge plot...")
 
-# all_data[0] is the first LFP simulation
-# all_data[1] is the first NMC simulation
+# all_data[0]/[1] are the first LFP/NMC simulations
 lfp_sample = all_data[0]
 nmc_sample = all_data[1]
 
@@ -352,8 +281,7 @@ plt.ylabel('Voltage [V]')
 plt.legend()
 plt.grid(True)
 
-plot_file = PULSE_PLOT_PNG
-plt.savefig(plot_file, dpi=150)
-print(f"Plot saved to '{plot_file}'")
+plt.savefig(PULSE_PLOT_PNG, dpi=150)
+print(f"Plot saved to '{PULSE_PLOT_PNG}'")
 
 plt.show()
