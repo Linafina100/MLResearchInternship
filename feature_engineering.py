@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+# --- FILE STRUCTURE ---
+
 def _default_features_dir(input_csv):
     """Sibling 'features/' dir next to input_csv's 'raw/' dir, so feature
     CSVs land in the same data/<run_label>/ tree simulate_batteries.py wrote
@@ -20,40 +22,24 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         output_dir = _default_features_dir(input_csv)
     os.makedirs(output_dir, exist_ok=True)
     
-    # Variation_ID included because SOH is rounded to 3 decimals, so distinct
-    # draws can round-collide; without it they'd merge into one Battery_ID
-    # and corrupt both batteries' features.
     groupby_cols = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'N_Steps', 'Variation_ID']
     df['Battery_ID'] = df.groupby(groupby_cols).ngroup()
     
     all_features = []
     
-    # Each step is exactly STEP_DURATION_S long. PyBaMM duplicates the boundary
-    # timestamp (the still-relaxed value, then the post-jump value after the
-    # next pulse starts) -- take the first occurrence. Boundary time is the
-    # only reliable signal for a step edge: sampling density varies hugely
-    # with cell age/size, so "capacity is flat" or "time gap is large"
-    # (both tried) don't reliably distinguish a real boundary from a normal
-    # internal sample.
+    # Identify step boundaries by exact timestamps (30m pulse + 60m rest).
     PULSE_DURATION_S = 30 * 60   # matches PULSE_DURATION in simulate_batteries.py
     REST_DURATION_S = 60 * 60    # matches REST_DURATION in simulate_batteries.py
     STEP_DURATION_S = PULSE_DURATION_S + REST_DURATION_S
-    BOUNDARY_TIME_TOL_S = 0.01   # far above float noise (observed to be exact),
-                                  # far below the >=0.1 s gap to the next real
-                                  # sample after a boundary
+    BOUNDARY_TIME_TOL_S = 0.01   # error range
 
-    # Absolute voltage bins, not SOC: SOC needs already knowing
-    # chemistry/capacity -- the target itself. Range (1.9-4.3V) covers both
-    # chemistries' plausible span with margin; bins a chemistry never
-    # reaches get dropped below.
+    # Use absolute voltage bins.
     V_BIN_MIN = 1.9
     V_BIN_MAX = 4.3
     V_BIN_WIDTH = 0.1
 
     for battery_id, group in df.groupby('Battery_ID'):
-        # 'stable' sort matters: at a step boundary the relaxed and
-        # post-jump points share a timestamp, and we rely on solve order
-        # (relaxed first) to tell them apart.
+        # Sort chronologically.
         group = group.sort_values('Time [s]', kind='stable').reset_index(drop=True)
         n_steps = int(group['N_Steps'].iloc[0])
         times = group['Time [s]'].values
@@ -76,18 +62,15 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         ocv_sequence = pd.concat([start_row, ocv_points[['Time [s]', 'Voltage [V]', 'Capacity [A.h]']]], ignore_index=True)
         
         # Calculate dV and dQ between consecutive relaxed points
-        # Signed on purpose: during discharge voltage drops while capacity rises,
-        # so dV/dQ comes out negative, matching the paper's dV/dQ curves (Fig. 3d).
         dV = ocv_sequence['Voltage [V]'].diff()
         dQ = ocv_sequence['Capacity [A.h]'].diff()     # Discharged capacity
 
         # Keep only valid intervals where capacity actually advanced
         valid = (dQ > 1e-5)
 
-        # Aborted pulses (voltage cutoff hit) should only ever truncate the
-        # END of a battery's sequence -- a valid transition after an invalid
-        # one would break positional indexing below.
-        valid_tail = valid.values[1:]  # index 0 is always NaN/False (no prior point)
+        # Ensure that if a battery hits a voltage cutoff and aborts a pulse, 
+        # the failure only occurs at the very end of the test sequence. 
+        # A mid-sequence failure followed by a "valid" step would break positional indexing
         invalid_positions = np.where(~valid_tail)[0]
         if invalid_positions.size > 0:
             first_invalid = invalid_positions[0]
@@ -107,9 +90,7 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
             'Initial_SOC': group['Initial_SOC'].iloc[0],
             'N_Steps': int(group['N_Steps'].iloc[0]),
         }
-        # Carried through for analysis only (e.g. checking separation per
-        # parameter set/temperature); ml_pipeline.py excludes these from the
-        # actual feature matrix.
+        # Carried through for analysis only
         for optional_col in ('Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set'):
             if optional_col in group.columns:
                 battery_features[optional_col] = group[optional_col].iloc[0]
@@ -124,16 +105,12 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         for bin_name in voltage_bins:
             battery_features[bin_name] = np.nan
 
-        # Bin by absolute voltage, not pulse position or SOC -- positional
-        # bins can't handle truncated real-world data, SOC bins need the
-        # target variable itself (see rationale above).
         for idx in dV[valid].index:
             dv_val = dV.loc[idx]
             dq_val = dQ.loc[idx]
             dvdq = dv_val / dq_val
 
-            # Terminal voltage at this OCV point (the value this transition
-            # discharged INTO), clamped to the pre-initialized bin range.
+            # Terminal voltage at this OCV point
             v_val = ocv_sequence['Voltage [V]'].iloc[idx]
             bin_high = np.ceil(round(v_val, 4) * 10) / 10.0
             bin_high = min(V_BIN_MAX, max(V_BIN_MIN + V_BIN_WIDTH, bin_high))
@@ -147,7 +124,7 @@ def create_features_by_voltage_bins(input_csv, step_counts=[5, 10, 15, 20, 25], 
         
     full_df = pd.DataFrame(all_features)
     
-    # Split into 5 datasets
+    # Split into 5 distinct datasets corresponding to each step count (5, 10, 15, 20, 25)
     datasets = {}
     print("\nExtraction Summary:")
     for n in step_counts:
