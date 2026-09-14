@@ -78,3 +78,61 @@ cutoff, or fail to solve, more often.
   a narrow SOC band. This reinforces the case (from the continuous-
   discharge redesign discussion) for features less sensitive to IR-drop
   variation than a fixed absolute-voltage bin grid.
+
+## Root cause: why does varying discharge rate collapse the signal?
+
+The "smearing" explanation above was a hypothesis, not yet confirmed. A
+follow-up diagnostic against the raw/feature data (no re-simulation
+needed) found the actual mechanism, and it's more specific than smearing:
+
+**1. Which bin flips, and where.** In the 0.7-1.0 interval (worked),
+`dV_dQ_V_3.4_3.3` has 63.5% LFP coverage / 28.3% NMC coverage -- both
+comfortably clear the 20% filter. In the 0.5-0.8 interval (failed), the
+*same* bin's LFP coverage collapses to 9.5% (NMC barely moves, 31.3%) --
+LFP alone drops below threshold and the bin gets dropped, leaving zero
+surviving bins for the whole interval.
+
+**2. What separates LFP batteries that still hit that bin from those that
+don't**, within the 0.5-0.8 interval:
+
+| | mean Pulse_C_Rate | max Pulse_C_Rate | mean Initial_SOC |
+|---|---|---|---|
+| Hit `3.4-3.3V` (23 batteries) | 0.167 | 0.227 | 0.761 |
+| Missed it (220 batteries) | 0.310 | 0.494 | 0.638 |
+
+Starting SOC matters (consistent with the SOC-only sweep's already-known
+effect), but the C-rate split is sharper and compounds with it: batteries
+that hit the bin never drew a C-rate above 0.227, while the missed group
+averages 0.31 and reaches nearly 0.5.
+
+**3. Direct mechanism, confirmed**: mean absolute voltage change between
+consecutive relaxed pulse points (LFP, same interval):
+
+| C-rate bucket | mean \|dV\| per step | n |
+|---|---|---|
+| 0.1-0.2C | 0.094 V | 57 |
+| 0.2-0.3C | 0.119 V | 56 |
+| 0.3-0.4C | 0.119 V | 50 |
+| 0.4-0.5C | 0.231 V | 30 |
+
+Per-pulse voltage steps more than double from the lowest to the highest
+C-rate bucket, and at the top end they're comparable to or larger than
+the 0.1V bin width itself.
+
+**Conclusion**: this is a sampling-resolution problem, not smearing. The
+pulse protocol only samples voltage once per pulse (the relaxed point).
+At higher current, each pulse discharges more capacity, so consecutive
+relaxed samples land farther apart in voltage -- a fixed 0.1V-wide bin
+increasingly falls *between* two samples rather than catching one,
+regardless of whether the chemistry "visits" that voltage region at all.
+This directly lowers how often any given battery registers a value in a
+specific bin, scaling with C-rate, and it compounds with the already-known
+SOC-range effect (fewer batteries even reaching the relevant voltage zone)
+to push bins below the 20% mutual-coverage threshold at far less extreme
+SOC restriction than the fixed-rate protocol needed (0.5-0.8 fails here
+vs. 0.3-0.6 for the fixed-rate sweep).
+
+This also points to the fix that would matter most: coarser, current-aware
+sampling resolution (e.g. more, smaller pulses, or bins sized relative to
+the actual per-pulse voltage step) would recover coverage without needing
+to constrain the discharge rate itself.
