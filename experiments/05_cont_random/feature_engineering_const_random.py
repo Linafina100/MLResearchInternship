@@ -4,13 +4,16 @@ import numpy as np
 import pandas as pd
 from scipy.signal import savgol_filter
 
-
+#Determines where to store the extracted features relative to the input CSV file
 def _default_features_dir(input_csv):
     """Sibling 'features/' dir next to input_csv's 'raw/' dir."""
     run_dir = os.path.dirname(os.path.dirname(os.path.abspath(input_csv)))
     return os.path.join(run_dir, "features")
 
 
+"""FILE LOADING AND FEATURE EXTRACTION
+Assigns a single numeric battery id to each continuous discharge run. 
+Grouping on variation id prevent independaent runs with identical rounded values from merging"""
 def create_features_by_voltage_bins_continuous(input_csv, output_dir=None):
     print(f"Loading raw continuous simulation data from '{input_csv}'...")
     if not os.path.exists(input_csv):
@@ -27,10 +30,12 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None):
     df['Battery_ID'] = df.groupby(groupby_cols).ngroup()
 
     # Voltage grid spanning full ranges of both LFP (down to 2.0 V) and NMC (up to 4.3 V)
-    V_BIN_MIN = 1.9
+    # This ensures every battery, regardless of duration or starting point, is evaluated
+    # against the exact same uniform column template
+    V_BIN_MIN = 1.5
     V_BIN_MAX = 4.3
     V_BIN_WIDTH = 0.1
-    n_v_bins = round((V_BIN_MAX - V_BIN_MIN) / V_BIN_WIDTH)
+    n_v_bins = int(round((V_BIN_MAX - V_BIN_MIN) / V_BIN_WIDTH))
     voltage_bins = [
         f"dV_dQ_V_{round(V_BIN_MIN + i * V_BIN_WIDTH, 1):.1f}_{round(V_BIN_MIN + (i - 1) * V_BIN_WIDTH, 1):.1f}"
         for i in range(n_v_bins, 0, -1)
@@ -41,13 +46,14 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None):
     for battery_id, group in df.groupby('Battery_ID'):
         group = group.sort_values('Time [s]', kind='stable').reset_index(drop=True)
 
-        if len(group) < 15:
+        if len(group) < 15: #skips corrupted or immediatly aborted runs
             continue
 
         raw_v = group['Voltage [V]'].values
         raw_q = group['Capacity [A.h]'].values
 
         # 1. Smooth sensor noise to prevent division-by-tiny-dQ explosions
+        #Savizky-Golay filter
         window_len = min(21, len(raw_v) if len(raw_v) % 2 != 0 else len(raw_v) - 1)
         if window_len >= 5:
             v_smooth = savgol_filter(raw_v, window_length=window_len, polyorder=2)
@@ -57,11 +63,12 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None):
         # 2. Derivative calculation
         dV = np.diff(v_smooth)
         dQ = np.diff(raw_q)
-        valid = dQ > 1e-5
+        valid = dQ > 1e-5 #prevents division by zero errors during resting or static intervals
 
         if not np.any(valid):
             continue
 
+        #metadata storage
         dvdq_vals = dV[valid] / dQ[valid]
         v_eval_pts = v_smooth[1:][valid]
 
@@ -88,18 +95,25 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None):
             if col in group.columns:
                 battery_features[col] = group[col].iloc[0]
 
-        # 3. Bin allocation
+        # 3. Bin allocation: Each point to point transition is mapped into
+        # its corresponding 0.1V window based on its instantaneous voltage
         bin_values = {}
         for dvdq, v_val in zip(dvdq_vals, v_eval_pts):
-            bin_high = np.ceil(round(v_val, 4) * 10) / 10.0
-            bin_high = min(V_BIN_MAX, max(V_BIN_MIN + V_BIN_WIDTH, bin_high))
-            bin_high = round(bin_high, 1)
-            bin_low = round(bin_high - V_BIN_WIDTH, 1)
+            if v_val < V_BIN_MIN or v_val > V_BIN_MAX:
+                continue
 
+            bin_idx = int(np.floor(round((v_val - V_BIN_MIN) / V_BIN_WIDTH, 4)))
+            bin_idx = min(n_v_bins - 1, max(0, bin_idx))
+
+            bin_low = round(V_BIN_MIN + bin_idx * V_BIN_WIDTH, 1)
+            bin_high = round(bin_low + V_BIN_WIDTH, 1)
             bin_key = f"dV_dQ_V_{bin_high:.1f}_{bin_low:.1f}"
+
             bin_values.setdefault(bin_key, []).append(dvdq)
 
         # Average dV/dQ values within each decile bin; absent bins remain NaN
+        # Multiple measurements points falling into the same 0.1V window are averaged
+        # into a single representetive dvdq value. 
         for bin_name in voltage_bins:
             vals = bin_values.get(bin_name)
             battery_features[bin_name] = float(np.mean(vals)) if vals else np.nan
@@ -127,8 +141,12 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None):
 
     return full_df, output_dir
 
-
-def plot_dvdq_profiles(features_df, output_dir=None):
+"""PLOTTING
+Plots every individual run with high transparancy, 
+highlighting operational variance across C-rates and aging states
+Overlays bold mean curves for each chemistry to visualize the LFP plateau vs NMC slope
+"""
+def plot_dvdq_profiles(features_df, output_dir=None, filename="dvdq_profiles_plot.png"):
     """Plots binned dV/dQ profiles against voltage for LFP vs NMC."""
     feat_cols = [c for c in features_df.columns if c.startswith('dV_dQ_V_')]
     if not feat_cols:
@@ -184,11 +202,11 @@ def plot_dvdq_profiles(features_df, output_dir=None):
     plt.tight_layout()
 
     if output_dir:
-        plot_path = os.path.join(output_dir, "dvdq_profiles_plot.png")
+        plot_path = os.path.join(output_dir, filename)
         plt.savefig(plot_path, dpi=150)
         print(f" -> dV/dQ profile plot saved to: '{plot_path}'")
 
-    plt.show()
+    plt.close(fig)
 
 
 if __name__ == "__main__":

@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 import pybamm
 
-# ---------------------------------------------------------------------------
-# REPRODUCIBILITY & CONFIGURATION
-# ---------------------------------------------------------------------------
+""" REPRODUCIBILITY & CONFIGURATION
+Sets up an environment controls, random number seeds, and dynamic directory management.
+"""
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
@@ -36,9 +36,9 @@ DISCHARGE_PLOT_PNG = os.environ.get(
 for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG):
     os.makedirs(os.path.dirname(_output_path), exist_ok=True)
 
-# ---------------------------------------------------------------------------
-# MODEL DEFINITION & PARAMETERS
-# ---------------------------------------------------------------------------
+"""MODEL DEFINITION & PARAMETERS
+Initializes the PyBaMM model, parameter sets, and helper functions for scaling and solving."""
+
 # Standard isothermal SPM: robust across Prada2013 and NMC without missing thermal keys
 model = pybamm.lithium_ion.SPM()
 
@@ -47,27 +47,36 @@ NMC_PARAMETER_SETS = ["Chen2020", "Mohtat2020", "OKane2022"]
 param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
 param_nmc_base = param_nmc_bases["Chen2020"]
 
-# Nominal physical lower cutoffs (article Sec. 2 limits)
+"""Lower voltage cutoff cant be 0.0V. Standard SPM does not iclude copper dissolution kinetics, 
+i assumes intercalation never ceases until numerical failure.
+=> will fail to reach true 0.0V.
+Going to low generally harms calssifier robustness:
+-The voltage bins below 2.0V will only capture a a couple of noisy points
+    =>high column sparisty
+-Below 2.0, both chemistries look nearly identical"""
+
 LOWER_VOLTAGE_CUTOFF = {
-    "LFP": 0.0,
-    "NMC": 0.0,
+    "LFP": 1.5,
+    "NMC": 1.8,
 }
 
+"""Capacity scaling and experiment definition: Standardizes cell capacites
+ so the ML classifier cannot use total capacity to infer chemistry"""
 CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
 
-
+#base parameter sets have fixed nominal capacities
 def capacity_multipliers_for(base_params, targets_ah):
     """Per-chemistry thickness multipliers scaling base parameters to target Ah."""
     base_capacity_ah = base_params["Nominal cell capacity [A.h]"]
     return [target_ah / base_capacity_ah for target_ah in targets_ah]
 
-
+#scales the physical electrode thicknesses to achieve the target Ah for each chemistry
 capacity_multipliers = {
     "LFP": capacity_multipliers_for(param_lfp_base, CAPACITY_TARGETS_AH),
     "NMC": capacity_multipliers_for(param_nmc_base, CAPACITY_TARGETS_AH),
 }
 
-
+#issues a single pybamm instruction to discharge at a fixed amapre until hitting V_min
 def make_continuous_discharge_experiment(current_a, v_min):
     """Continuous constant-current discharge down to the voltage boundary."""
     return pybamm.Experiment([f"Discharge at {current_a:.4f} A until {v_min} V"])
@@ -75,7 +84,10 @@ def make_continuous_discharge_experiment(current_a, v_min):
 
 FAILURE_LOG = []
 
-
+"""SOLVER WRAPPER + ERROR HANDLING
+Prevents indiviual simulation failures from crashing the entire sweep. 
+Logs exceptions to a CSV for later inspection. 
+Recovers any partial time-series data logged before termination"""
 def solve_with_cutoff(sim, initial_soc, chem, context=""):
     """Solves the continuous discharge and logs exceptions gracefully."""
     try:
@@ -113,10 +125,16 @@ def solve_with_cutoff(sim, initial_soc, chem, context=""):
 
     return sol
 
+"""SIMUALTION SWEEP
+Generates the synthetic dataset by varying operational and degradation parameters 
+across 3x83=249 (498 total discharge curves)
+1. Random sampling: Draws a distinct inital SOC, SOH, C-rate, and a random NMC paramter set (no not all three is used for each run)
+2. Electrode degradation: Scales the maximum lithium concentration to simulate capacity fade/loss of active material (SOH)
+3. Conductivity and thermal scaling: Alters electrode conductivity by temperature and aging factors to simulate internal resisitance growth
+4. Execution and pairing: Discharges both LFP and NMC under identical conditions (I=c_rate*target_ah), logging the time-series data for each run.
+5. Sensor noise injection: Adds Gaussian noise to the voltage signal to simulate real world sensor noise and measurement error.
+6. Data assembly: Appends timestamps, voltage, capacity and metadata into tabular dataframes"""
 
-# ---------------------------------------------------------------------------
-# SIMULATION SWEEP
-# ---------------------------------------------------------------------------
 variations_per_size = 83  # 3 sizes * 83 variations = ~249 runs per chemistry
 all_data = []
 
@@ -128,7 +146,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         soh = random.uniform(0.60, 0.85)
 
         # C-rate sampled per variation inside the loop (capped to SPM-safe range 0.2C-1.0C)
-        c_rate = random.uniform(0.2, 3.0)
+        c_rate = random.uniform(0.2, 1.0)
 
         ambient_c = random.uniform(0.0, 35.0)
         ambient_k = 273.15 + ambient_c
@@ -208,9 +226,11 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             })
             all_data.append(df)
 
-# ---------------------------------------------------------------------------
-# SAVE DATA & GENERATE ARTIFACTS
-# ---------------------------------------------------------------------------
+"""SAVE DATA
+Merges individual time series dataframes into a single master CSV.
+Saves the raw dataset to disk for the feature engineering script and 
+exports simulation failures if any runs failed"""
+
 if all_data:
     training_data = pd.concat(all_data, ignore_index=True)
     training_data.to_csv(OUTPUT_DATA_CSV, index=False)
@@ -224,10 +244,13 @@ if FAILURE_LOG:
     print(failures_df["ExceptionType"].value_counts().to_string())
     print(f"Full failure log saved to '{FAILURE_LOG_CSV}'")
 
+"""PLOT ALL RUNS
+Generates a dual panel visulaization to inspect dataset quality. 
+Left plot: Overlays all LPF and NMC curves to visually verify the flat LFP plateau
+against the sloping NMC curve across all cell sizes, C-rates, and SOC/SOH variations.
+Right plot: Normalizes the x-axis to relative capacity (Ah / Ah_nominal) and color codes curves by C-rate.
+This reveals the ohmic (IR) drops that the ML pipleine must navigate to classify"""
 
-# ---------------------------------------------------------------------------
-# PLOTTING ALL RUNS ACROSS ALL SOCs, C-RATES, AND CAPACITIES
-# ---------------------------------------------------------------------------
 print("Generatingdischarge plot containing all runs...")
 
 if not training_data.empty:
@@ -259,7 +282,7 @@ if not training_data.empty:
             )
             nmc_legend_added = True
 
-    ax1.set_title("All Continuous Discharges: LFP vs. NMC", fontsize=12, fontweight="bold")
+    ax1.set_title("All Discharges: LFP vs. NMC", fontsize=12, fontweight="bold")
     ax1.set_xlabel("Discharged Capacity [Ah]", fontsize=11)
     ax1.set_ylabel("Terminal Voltage [V]", fontsize=11)
     ax1.grid(True, linestyle="--", alpha=0.5)
@@ -273,7 +296,7 @@ if not training_data.empty:
     # 2. Plot Right: Normalized by Depth of Discharge, Colored by C-Rate
     # Normalizing capacity by each run's target capacity reveals the intrinsic OCV plateau
     cmap = plt.cm.viridis
-    norm = plt.Normalize(vmin=0.2, vmax=1.0)
+    norm = plt.Normalize(vmin=0.2, vmax=3.0)
 
     for (chem, var_id), run_df in training_data.groupby(["Chemistry", "Variation_ID"]):
         c_rate = run_df["C_Rate"].iloc[0]
@@ -301,10 +324,10 @@ if not training_data.empty:
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax2, pad=0.02)
     cbar.set_label("Discharge C-Rate [C]", fontsize=10)
-
+# At the end of the simulation plotting block:
     plt.tight_layout()
     plt.savefig(DISCHARGE_PLOT_PNG, dpi=200)
     print(f"All-run overview plot successfully saved to '{DISCHARGE_PLOT_PNG}'")
-    plt.show()
+    plt.close()
 else:
     print("Plot skipped: training_data is empty.")
