@@ -23,7 +23,7 @@ def _default_features_dir(input_csv):
     run_dir = os.path.dirname(os.path.dirname(os.path.abspath(input_csv)))
     return os.path.join(run_dir, "features")
 
-
+# MAIN FUNCITON: CREATE FEATURES BY VOLTAGE BINS
 def create_features_by_voltage_bins_continuous(input_csv, output_dir=None, min_chemistry_coverage=0.2):
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
@@ -58,7 +58,7 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None, min_c
 
         if not valid.any():
             continue
-
+        
         battery_features = {
             'Battery_ID': battery_id,
             'Chemistry': group['Chemistry'].iloc[0],

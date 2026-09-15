@@ -15,6 +15,9 @@ comments for the rationale behind those.
 Usage: same env vars as simulate_batteries.py (SOC_RANGE_MIN/MAX,
 DATA_DIR, RUN_LABEL, OUTPUT_DATA_CSV, FAILURE_LOG_CSV).
 """
+
+### IMPORTS
+
 import os
 import pybamm
 import pandas as pd
@@ -25,9 +28,12 @@ import matplotlib.pyplot as plt
 random.seed(42)
 np.random.seed(42)
 
+### ENVIRONMENT CONFIGURATION
+
 SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
 SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
 
+### FILE STORAGE
 DATA_DIR = os.environ.get("DATA_DIR", "data")
 RUN_LABEL = os.environ.get("RUN_LABEL", "default")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
@@ -39,23 +45,30 @@ DISCHARGE_PLOT_PNG = os.environ.get("DISCHARGE_PLOT_PNG", os.path.join(RUN_DIR, 
 for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG):
     os.makedirs(os.path.dirname(_output_path), exist_ok=True)
 
+### SELECTION OF BATTERY MODEL: SPM
 model = pybamm.lithium_ion.SPM()
 
+### LOADING PARAMETER SETS
 param_lfp_base = pybamm.ParameterValues("Prada2013")
 NMC_PARAMETER_SETS = ["Chen2020", "Mohtat2020", "OKane2022"]
 param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
 param_nmc_base = param_nmc_bases["Chen2020"]
 
+
+### DISCHARGE SETTINGS
 # Continuous discharge: fixed 0.6C for every battery, run to the voltage
 # cutoff (no fixed time window). Current is scaled to each size tier's own
 # target capacity so 0.6C means the same thing at 1.2/2.0/3.5 Ah.
+
+""" Look into this part of the code"""
 DISCHARGE_C_RATE = 0.6
+# NEW
 LOWER_VOLTAGE_CUTOFF = {
-    "LFP": 1.8,
-    "NMC": 2.3,
+    "LFP": 0,
+    "NMC": 0,
 }
 
-
+### FUNCTION: CREATES A PYBAMM EXPERIMENT
 def make_continuous_discharge_experiment(current_a, v_min):
     """Build a single continuous constant-current discharge, no rests."""
     return pybamm.Experiment([f"Discharge at {current_a:.4f} A until {v_min} V"])
@@ -63,7 +76,7 @@ def make_continuous_discharge_experiment(current_a, v_min):
 
 FAILURE_LOG = []
 
-
+### FUNCTION: RUNS A SIMULATION AND HANDLES FAILURES
 def solve_with_cutoff(sim, initial_soc, chem, context=""):
     """Solve an experiment; keep partial results if the voltage cut-off is hit.
     Any solve failure is logged.
@@ -95,10 +108,10 @@ def solve_with_cutoff(sim, initial_soc, chem, context=""):
 
     return sol
 
-
+### TARGET CAPACITIES
 CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
 
-
+### FUNCTION: CALCULTES HOW MUCH EACH PARAMETER SET NEEDS TO BE SCALED TO MATCH EACH TARGET CAPACITY
 def capacity_multipliers_for(base_params, targets_ah):
     """Per-chemistry thickness multipliers that scale a base parameter set's
     own nominal capacity onto each of the target capacities."""
@@ -110,11 +123,13 @@ capacity_multipliers = {
     "LFP": capacity_multipliers_for(param_lfp_base, CAPACITY_TARGETS_AH),
     "NMC": capacity_multipliers_for(param_nmc_base, CAPACITY_TARGETS_AH),
 }
-
+### NUMBER OF VARIATIONS PER SIZE
 variations_per_size = 83
 
 all_data = []
 
+
+### SIMULATIONS BEGIN
 print("Starting continuous-discharge simulations (Random SOC/SOH)...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
@@ -133,6 +148,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | "
               f"SOC: {soc:.2f} | SOH: {soh:.2f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
 
+        # Copying parameter sets
         param_lfp = param_lfp_base.copy()
         param_nmc = param_nmc_bases[nmc_set_name].copy()
 
@@ -142,6 +158,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         }
 
         resistance_factors = {}
+        # Chemistry parameter loop
         for chem, param in chemistries.items():
             mult = capacity_multipliers[chem][size_idx]
             param["Negative electrode thickness [m]"] *= mult
@@ -155,7 +172,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             resistance_factors[chem] = resistance_factor
             param["Negative electrode conductivity [S.m-1]"] *= resistance_factor
             param["Positive electrode conductivity [S.m-1]"] *= resistance_factor
-
+        # Simulation loop 
         for chem, param in chemistries.items():
             v_min = LOWER_VOLTAGE_CUTOFF[chem]
             current_a = DISCHARGE_C_RATE * target_ah
