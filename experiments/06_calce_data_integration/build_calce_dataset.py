@@ -201,6 +201,6 @@ if __name__ == "__main__":
     REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
     DOWNLOADS_DIR = os.path.join(REPO_ROOT, "data", "calce_experiment_data")
-    OUTPUT_FILE = os.path.join(REPO_ROOT, "data", "default", "raw", "advanced_synthetic_battery_data.csv")
+    OUTPUT_FILE = os.path.join(REPO_ROOT, "data", "default", "raw", "calce_data.csv")
 
     merge_calce_dataset(DOWNLOADS_DIR, OUTPUT_FILE)

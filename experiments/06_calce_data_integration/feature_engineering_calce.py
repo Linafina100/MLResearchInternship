@@ -106,5 +106,5 @@ if __name__ == "__main__":
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
-    input_file = os.path.join(REPO_ROOT, "data", "default", "raw", "advanced_synthetic_battery_data.csv")
+    input_file = os.path.join(REPO_ROOT, "data", "default", "raw", "calce_data.csv")
     create_features_by_voltage_bins(input_file)

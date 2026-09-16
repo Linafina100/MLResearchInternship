@@ -1,19 +1,18 @@
-import os
 import json
+import os
 import joblib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-
-from sklearn.model_selection import StratifiedGroupKFold
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from xgboost import XGBClassifier
 
-# Directory for trained ML artifacts (models, scalers, encoders, feature lists).
+# Default directory for trained ML artifacts (models, scalers, encoders, feature lists)
 MODELS_DIR = os.environ.get("MODELS_DIR", "models")
 
 
@@ -21,26 +20,55 @@ def run_ml_pipeline(
     synthetic_csv: str,
     real_csv: str = None,
     pretrained_model_path: str = None,
-    save_artifacts: bool = True
+    save_artifacts: bool = True,
+    models_dir: str = MODELS_DIR,
+    plot_filename: str = "evaluation_metrics_plot.png",
 ):
     """
-    synthetic_csv: feature CSV to train on.
-    real_csv: experimental test set for sim-to-real evaluation.
-    pretrained_model_path: optional model to fine-tune.
-    save_artifacts: persist trained model & preprocessors to MODELS_DIR.
+    synthetic_csv: feature CSV to train on (continuous synthetic dataset).
+    real_csv: optional real experimental test set for sim-to-real evaluation.
+    pretrained_model_path: optional model to warm-start/fine-tune.
+    save_artifacts: persist trained model + preprocessing artifacts to models_dir.
+    models_dir: target directory for artifacts and evaluation plots.
+    plot_filename: filename for saving confusion matrix and feature importances.
     """
+    if not os.path.exists(synthetic_csv):
+        raise FileNotFoundError(f"Synthetic feature dataset not found at: {synthetic_csv}")
+
     df = pd.read_csv(synthetic_csv)
 
-    # Features = everything not in metadata_cols.
+    # Metadata columns to exclude from training features
     metadata_cols = [
-        'Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC',
-        'Target_Capacity_Ah', 'N_Steps',
-        'Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set', 'Variation_ID',
+        "Battery_ID",
+        "Chemistry",
+        "Size_Multiplier",
+        "SOH",
+        "Initial_SOC",
+        "Target_Capacity_Ah",
+        "Variation_ID",
+        "N_Steps",
+        "C_Rate",
+        "Current [A]",
+        "Ambient_Temperature_C",
+        "Resistance_Factor",
+        "Base_Parameter_Set",
+        "V_min [V]",
     ]
-    feature_names_path = os.path.join(MODELS_DIR, "feature_names.json")
-    label_encoder_path = os.path.join(MODELS_DIR, "label_encoder.joblib")
-    feature_imputer_path = os.path.join(MODELS_DIR, "feature_imputer.joblib")
-    feature_scaler_path = os.path.join(MODELS_DIR, "feature_scaler.joblib")
+
+    os.makedirs(models_dir, exist_ok=True)
+    feature_names_path = os.path.join(models_dir, "feature_names.json")
+    label_encoder_path = os.path.join(models_dir, "label_encoder.joblib")
+    feature_imputer_path = os.path.join(models_dir, "feature_imputer.joblib")
+    feature_scaler_path = os.path.join(models_dir, "feature_scaler.joblib")
+
+    # If real_csv is provided, restrict features to the intersection of both CSVs
+    if real_csv is not None:
+        if not os.path.exists(real_csv):
+            raise FileNotFoundError(f"Real experimental CSV not found at: {real_csv}")
+        df_real_raw = pd.read_csv(real_csv)
+        candidate_cols = [col for col in df.columns if col in df_real_raw.columns and col not in metadata_cols]
+    else:
+        candidate_cols = [col for col in df.columns if col not in metadata_cols]
 
     if pretrained_model_path and os.path.exists(feature_names_path):
         with open(feature_names_path, "r") as f:
@@ -49,13 +77,14 @@ def run_ml_pipeline(
             if col not in df.columns:
                 df[col] = np.nan
     else:
-        feature_cols = [col for col in df.columns if col not in metadata_cols]
+        feature_cols = candidate_cols
+
     print(f"Identified {len(feature_cols)} feature columns for training.")
 
     if not feature_cols:
-        print("No feature columns available -- skipping training.")
+        print("No feature columns available -- skipping training (no usable signal).")
         le = LabelEncoder()
-        classes = list(le.fit(df['Chemistry']).classes_)
+        classes = list(le.fit(df["Chemistry"]).classes_)
         return {
             "best_model": None,
             "best_model_name": "(no usable features)",
@@ -66,10 +95,12 @@ def run_ml_pipeline(
         }
 
     X = df[feature_cols].copy()
-    y = df['Chemistry'].copy()
+    y = df["Chemistry"].copy()
 
+    # Convert mathematical infinities to NaN
     X.replace([np.inf, -np.inf], np.nan, inplace=True)
 
+    # Encode target classes (LFP -> 0, NMC -> 1)
     if pretrained_model_path and os.path.exists(label_encoder_path):
         le = joblib.load(label_encoder_path)
         y_encoded = le.transform(y)
@@ -79,20 +110,19 @@ def run_ml_pipeline(
     classes = list(le.classes_)
     print(f"Target classes mapped: {dict(zip(classes, range(len(classes))))}")
 
-    # Sim-to-Real Split Execution
+    # Train/Test Split Execution
     if real_csv is not None:
         print(f"\n--> [Step 2] Loading real experimental test set from: {real_csv}")
         df_real = pd.read_csv(real_csv)
-        
         X_train = X
         y_train = y_encoded
         X_test = df_real[feature_cols].copy()
         X_test.replace([np.inf, -np.inf], np.nan, inplace=True)
-        y_test = le.transform(df_real['Chemistry'])
-        print(f"Sim-to-Real split: {len(X_train)} synthetic train samples | {len(X_test)} real test samples.")
+        y_test = le.transform(df_real["Chemistry"])
+        print(f"Sim-to-Real split: {len(X_train)} synthetic train | {len(X_test)} real test samples.")
     else:
-        print("\n--> [Step 2] Performing ~80/20 Stratified Group Split on synthetic data...")
-        groups = df['Battery_ID'].values
+        print("\n--> [Step 2] Performing Stratified Group Split on synthetic data...")
+        groups = df["Battery_ID"].values
         sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
         train_idx, test_idx = next(sgkf.split(X, y_encoded, groups=groups))
 
@@ -100,7 +130,7 @@ def run_ml_pipeline(
         y_train, y_test = y_encoded[train_idx], y_encoded[test_idx]
         print(f"Split completed: {len(X_train)} train samples | {len(X_test)} test samples.")
 
-    # Imputation and Scaling
+    # Preprocessing: Fit strictly on X_train to prevent leakage
     if (
         pretrained_model_path
         and os.path.exists(feature_imputer_path)
@@ -118,7 +148,7 @@ def run_ml_pipeline(
         X_train_clipped = X_train.clip(lower=lower_bound, upper=upper_bound, axis=1)
         X_test_clipped = X_test.clip(lower=lower_bound, upper=upper_bound, axis=1)
 
-        imputer = SimpleImputer(strategy='median')
+        imputer = SimpleImputer(strategy="median")
         X_train_imputed = imputer.fit_transform(X_train_clipped)
         X_test_imputed = imputer.transform(X_test_clipped)
 
@@ -131,7 +161,7 @@ def run_ml_pipeline(
     print("=" * 45)
 
     if pretrained_model_path and os.path.exists(pretrained_model_path):
-        print(f"\n--> Loading pre-trained Phase 1 model from: {pretrained_model_path}")
+        print(f"\n--> Loading pre-trained model from: {pretrained_model_path}")
         best_model = joblib.load(pretrained_model_path)
         n_new_estimators = 50
 
@@ -144,10 +174,7 @@ def run_ml_pipeline(
             best_model.n_estimators += n_new_estimators
             best_model.fit(X_train_scaled, y_train)
         else:
-            raise TypeError(
-                f"Don't know how to fine-tune a {type(best_model).__name__} -- "
-                "only RandomForestClassifier and XGBClassifier are supported."
-            )
+            raise TypeError(f"Unsupported model type: {type(best_model).__name__}")
 
         best_model_name = f"Fine-Tuned ({type(best_model).__name__})"
         best_preds = best_model.predict(X_test_scaled)
@@ -157,36 +184,31 @@ def run_ml_pipeline(
     else:
         models = {
             "Random Forest": RandomForestClassifier(
-                n_estimators=150,
-                max_depth=10,
-                random_state=42,
-                n_jobs=-1
+                n_estimators=150, max_depth=10, random_state=42, n_jobs=-1
             ),
             "XGBoost": XGBClassifier(
                 n_estimators=150,
                 learning_rate=0.08,
                 max_depth=4,
                 subsample=0.8,
-                colsample_bytree=0.8,
+                colsample_bytree=1.0,
                 eval_metric="logloss",
                 random_state=42,
-                n_jobs=-1
-            )
+                n_jobs=-1,
+            ),
         }
 
         best_model_name = ""
-        best_accuracy = 0.0
+        best_accuracy = -1.0
         best_model = None
         best_preds = None
         model_accuracies = {}
 
         for name, model in models.items():
             model.fit(X_train_scaled, y_train)
-
             y_pred = model.predict(X_test_scaled)
             acc = accuracy_score(y_test, y_pred)
             model_accuracies[name] = acc
-
             print(f"{name:<25}: Accuracy = {acc * 100:.2f}%")
 
             if acc > best_accuracy:
@@ -199,11 +221,19 @@ def run_ml_pipeline(
     print(f"Top Performer: {best_model_name} ({best_accuracy * 100:.2f}% Accuracy)\n")
 
     print(f"Detailed Classification Report ({best_model_name}):")
-    print(classification_report(y_test, best_preds, target_names=classes))
+    print(
+        classification_report(
+            y_test,
+            best_preds,
+            labels=range(len(classes)),
+            target_names=classes,
+            zero_division=0,
+        )
+    )
 
     if save_artifacts:
-        os.makedirs(MODELS_DIR, exist_ok=True)
-        joblib.dump(best_model, os.path.join(MODELS_DIR, "best_battery_classifier.joblib"))
+        os.makedirs(models_dir, exist_ok=True)
+        joblib.dump(best_model, os.path.join(models_dir, "best_battery_classifier.joblib"))
         joblib.dump(scaler, feature_scaler_path)
         joblib.dump(imputer, feature_imputer_path)
         joblib.dump(le, label_encoder_path)
@@ -211,13 +241,27 @@ def run_ml_pipeline(
             json.dump(feature_cols, f)
         print("Pipeline artifacts saved: model, scaler, imputer, label encoder, and feature names.")
 
+    # -----------------------------------------------------------------------
+    # PLOTTING: Confusion Matrix & Feature Importances
+    # -----------------------------------------------------------------------
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    cm = confusion_matrix(y_test, best_preds)
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=classes, yticklabels=classes, ax=axes[0])
-    axes[0].set_title(f'Confusion Matrix: {best_model_name}')
-    axes[0].set_xlabel('Predicted Chemistry')
-    axes[0].set_ylabel('True Chemistry')
 
+    # Left: Confusion Matrix
+    cm = confusion_matrix(y_test, best_preds, labels=range(len(classes)))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=classes,
+        yticklabels=classes,
+        ax=axes[0],
+    )
+    axes[0].set_title(f"Confusion Matrix: {best_model_name}")
+    axes[0].set_xlabel("Predicted Chemistry")
+    axes[0].set_ylabel("True Chemistry")
+
+    # Right: Top Feature Importances
     feature_importances = {}
     if hasattr(best_model, "feature_importances_"):
         importances = best_model.feature_importances_
@@ -227,11 +271,17 @@ def run_ml_pipeline(
         top_weights = importances[indices]
 
         sns.barplot(x=top_weights, y=top_features, ax=axes[1], palette="viridis")
-        axes[1].set_title(f'Top 10 Feature Importances ({best_model_name})')
-        axes[1].set_xlabel('Relative Importance Weight')
+        axes[1].set_title(f"Top 10 Feature Importances ({best_model_name})")
+        axes[1].set_xlabel("Relative Importance Weight")
 
     plt.tight_layout()
+
+    if save_artifacts:
+        eval_plot_path = os.path.join(models_dir, plot_filename)
+        plt.savefig(eval_plot_path, dpi=150)
+        print(f"Evaluation plots saved to '{eval_plot_path}'")
     plt.show()
+    plt.close(fig)
 
     return {
         "best_model": best_model,
@@ -249,7 +299,7 @@ if __name__ == "__main__":
 
     # Synthetic training set
     SYNTHETIC_CSV = os.path.join(
-        REPO_ROOT, "data", "default", "features", "ml_features_25_steps.csv"
+        REPO_ROOT, "data", "continuous_discharge", "features", "ml_features_continuous.csv"
     )
 
     # Real experimental evaluation set
@@ -260,5 +310,6 @@ if __name__ == "__main__":
     # Run Sim-to-Real pipeline
     run_ml_pipeline(
         synthetic_csv=SYNTHETIC_CSV,
-        real_csv=REAL_EXPERIMENTAL_CSV
+        real_csv=REAL_EXPERIMENTAL_CSV,
+        models_dir=os.path.join(REPO_ROOT, "models"),
     )
