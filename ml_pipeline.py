@@ -277,8 +277,8 @@ def run_ml_pipeline(
 
 
 if __name__ == "__main__":
-    # Standard training mode (Phase 2 SOC-bin baseline, trained from scratch):
-    run_ml_pipeline(synthetic_csv=os.path.join("data", "default", "features", "ml_features_25_steps.csv")) #update for every step count and SOC
+    # Standard training mode, trained from scratch:
+    run_ml_pipeline(synthetic_csv=os.path.join("data", "default", "features", "ml_features.csv"))
 
     # Fine-tuning mode (uncomment once the above baseline has been saved and
     # truncated real-world factory data is ready): loads

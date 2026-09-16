@@ -25,7 +25,14 @@ import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
-sys.path.insert(0, PROJECT_DIR)  # for the root feature_engineering.py / ml_pipeline.py
+# Continuous discharge was promoted to the root feature_engineering.py;
+# this sweep pairs its own variable-rate pulse simulator with the GITT
+# pulse-boundary feature engineering, archived at
+# experiments/07_pulse_protocol_archive/ -- inserted last (so first in
+# sys.path) to shadow the root feature_engineering.py.
+PULSE_ARCHIVE_DIR = os.path.join(PROJECT_DIR, "experiments", "07_pulse_protocol_archive")
+sys.path.insert(0, PROJECT_DIR)  # for the root ml_pipeline.py
+sys.path.insert(0, PULSE_ARCHIVE_DIR)
 
 from feature_engineering import create_features_by_voltage_bins
 from ml_pipeline import run_ml_pipeline
