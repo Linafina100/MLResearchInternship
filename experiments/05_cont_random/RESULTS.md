@@ -43,7 +43,17 @@ now differ only in discharge rate (fixed 0.6C vs. random 0.2C-1.0C) and
 voltage cutoffs (1.8V/2.3V vs. 1.5V/1.8V), not in SOH range. Results below
 are from the rerun with this wider range.
 
-## Results (post-fix, SOH 50-85%)
+## colsample_bytree aligned with root
+
+`ML_pipeline_const_random.py` used `colsample_bytree=1.0` for XGBoost,
+diverging from root `ml_pipeline.py`'s `0.8` with no documented reason.
+Changed to `0.8` to match. Rerun below is unaffected: RF and XGBoost
+accuracy are identical to the pre-fix run at every interval (with this few
+features, subsampling 80% vs. 100% of them per tree doesn't change the
+result) — only the third-ranked feature-importance entry shifted slightly
+at two intervals.
+
+## Results (post-fix, SOH 50-85%, colsample_bytree=0.8)
 
 | SOC Interval | RF Accuracy | XGB Accuracy | Surviving Bins | Runtime |
 |---|---|---|---|---|
