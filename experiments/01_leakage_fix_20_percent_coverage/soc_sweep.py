@@ -38,12 +38,18 @@ import time
 # three levels to find the repo root regardless of cwd.
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+# Continuous discharge was promoted to the root simulate_batteries.py/
+# feature_engineering.py; this sweep specifically needs the GITT pulse
+# protocol, archived at experiments/07_pulse_protocol_archive/ -- inserted
+# last (so first in sys.path) to shadow the root feature_engineering.py.
+PULSE_ARCHIVE_DIR = os.path.join(PROJECT_DIR, "experiments", "07_pulse_protocol_archive")
 sys.path.insert(0, PROJECT_DIR)
+sys.path.insert(0, PULSE_ARCHIVE_DIR)
 
 from feature_engineering import create_features_by_voltage_bins
 from ml_pipeline import run_ml_pipeline
 
-SIMULATE_SCRIPT = os.path.join(PROJECT_DIR, "simulate_batteries.py")
+SIMULATE_SCRIPT = os.path.join(PULSE_ARCHIVE_DIR, "simulate_batteries.py")
 DATA_DIR = os.path.join(PROJECT_DIR, "data")
 
 # (soc_max, soc_min) pairs -- matches simulate_batteries.py's
