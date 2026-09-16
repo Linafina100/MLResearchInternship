@@ -3,7 +3,7 @@ Extracts LFP/NMC classification features from the continuous-discharge
 raw simulation data (simulate_batteries.py): dV/dQ computed between every
 consecutive raw voltage/capacity sample (there are no pulse boundaries to
 anchor on, unlike this project's earlier GITT-pulse-based version,
-archived at experiments/07_pulse_protocol_archive/), binned by absolute
+archived at experiments/08_pulse_protocol_archive/), binned by absolute
 terminal voltage (0.1V bins) and averaged per bin -- a dense continuous
 trace puts many raw transitions in the same bin, unlike the single
 relaxed point the pulse protocol gave it.

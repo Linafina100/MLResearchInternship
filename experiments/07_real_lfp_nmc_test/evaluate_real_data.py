@@ -6,7 +6,7 @@ experiments/03_continuous_discharge_soc_sweep/feature_engineering_continuous.py
 repo root) -- a plain train/test split on real, combined data, not a
 sim-to-real transfer test.
 
-Usage: python3 experiments/06_real_lfp_nmc_test/evaluate_real_data.py
+Usage: python3 experiments/07_real_lfp_nmc_test/evaluate_real_data.py
 """
 import matplotlib
 matplotlib.use("Agg")
