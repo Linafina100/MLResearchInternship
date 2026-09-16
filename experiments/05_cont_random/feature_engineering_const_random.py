@@ -14,7 +14,7 @@ def _default_features_dir(input_csv):
 """FILE LOADING AND FEATURE EXTRACTION
 Assigns a single numeric battery id to each continuous discharge run. 
 Grouping on variation id prevent independaent runs with identical rounded values from merging"""
-def create_features_by_voltage_bins_continuous(input_csv, output_dir=None):
+def create_features_by_voltage_bins_continuous(input_csv, output_dir=None, min_chemistry_coverage=0.2):
     print(f"Loading raw continuous simulation data from '{input_csv}'...")
     if not os.path.exists(input_csv):
         raise FileNotFoundError(f"Input file not found at: {input_csv}")
@@ -128,6 +128,15 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None):
     full_df = full_df.drop(columns=empty_v_cols)
 
     feat_cols = [c for c in full_df.columns if c.startswith('dV_dQ_V_')]
+
+    # Drop bins only one chemistry ever reaches: SimpleImputer's median-fill
+    # would otherwise give every row of the missing chemistry an identical
+    # constant -- a trivial giveaway, not real signal. See
+    # experiments/01_leakage_fix_20_percent_coverage/RESULTS.md.
+    coverage_by_chem = full_df.groupby('Chemistry')[feat_cols].apply(lambda g: g.notna().mean())
+    one_sided_cols = [c for c in feat_cols if (coverage_by_chem[c] < min_chemistry_coverage).any()]
+    full_df = full_df.drop(columns=one_sided_cols)
+    feat_cols = [c for c in feat_cols if c not in one_sided_cols]
 
     out_name = os.path.join(output_dir, "ml_features_continuous.csv")
     full_df.to_csv(out_name, index=False)

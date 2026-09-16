@@ -4,3 +4,7 @@ pulse_discharge_plot*.png
 continuous_discharge_plot*.png
 .DS_Store
 DownloadedData/
+# Nothing under data/ is ever committed (regenerable simulation output --
+# raw/feature CSVs, plots, per-run model artifacts, whatever format a given
+# experiment happens to write); root models/ is a separate, tracked folder.
+data/

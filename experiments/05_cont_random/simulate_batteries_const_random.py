@@ -48,14 +48,8 @@ NMC_PARAMETER_SETS = ["Chen2020", "Mohtat2020", "OKane2022"]
 param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
 param_nmc_base = param_nmc_bases["Chen2020"]
 
-"""Lower voltage cutoff cant be 0.0V. Standard SPM does not iclude copper dissolution kinetics, 
-i assumes intercalation never ceases until numerical failure.
-=> will fail to reach true 0.0V.
-Going to low generally harms calssifier robustness:
--The voltage bins below 2.0V will only capture a a couple of noisy points
-    =>high column sparisty
--Below 2.0, both chemistries look nearly identical"""
-
+# SPM never reaches 0V exactly (no copper-dissolution kinetics modeled);
+# cutoffs set well above that failure point.
 LOWER_VOLTAGE_CUTOFF = {
     "LFP": 1.5,
     "NMC": 1.8,
