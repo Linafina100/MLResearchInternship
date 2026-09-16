@@ -10,6 +10,10 @@ depending on pulse-test step count, not ~97-100%.
 
 ## The mechanism
 
+(This section describes the pulse-protocol version of these files, from
+before continuous discharge was promoted to repo root -- now archived at
+`experiments/07_pulse_protocol_archive/`.)
+
 `feature_engineering.py`'s `create_features_by_voltage_bins` computes one
 dV/dQ feature per 0.1V terminal-voltage bin, spanning 1.9-4.3V. LFP and NMC
 have different physical voltage ranges (LFP ~2.0-3.6V, NMC ~2.5-4.2V), so
