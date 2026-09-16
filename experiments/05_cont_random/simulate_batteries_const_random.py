@@ -138,7 +138,7 @@ print("Starting constant current-discharge simulations (Random C-rate/SOC/SOH/Te
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
         soc = random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX)
-        soh = random.uniform(0.60, 0.85)
+        soh = random.uniform(0.50, 0.85)
 
         # C-rate sampled per variation inside the loop (capped to SPM-safe range 0.2C-1.0C)
         c_rate = random.uniform(0.2, 1.0)

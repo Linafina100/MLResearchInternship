@@ -33,16 +33,34 @@ overwritten experiment 03's already-published data. Changed to
 `const_random_soc_<interval>` so it has its own namespace; verified
 experiment 03's data is byte-for-byte unchanged after this rerun.
 
-## Results (post-fix)
+## SOH range aligned with experiment 03
+
+`simulate_batteries_const_random.py` originally drew `soh = random.uniform(0.60, 0.85)`
+— narrower than the `0.50-0.85` range used in experiment 03 and everywhere
+else in the repo, and never simulating the most-degraded cells. Changed to
+`random.uniform(0.50, 0.85)` to match experiment 03, so the two experiments
+now differ only in discharge rate (fixed 0.6C vs. random 0.2C-1.0C) and
+voltage cutoffs (1.8V/2.3V vs. 1.5V/1.8V), not in SOH range. Results below
+are from the rerun with this wider range.
+
+## Results (post-fix, SOH 50-85%)
 
 | SOC Interval | RF Accuracy | XGB Accuracy | Surviving Bins | Runtime |
 |---|---|---|---|---|
-| 0.7-1.0 | 100.00% | 100.00% | 8 bins (`3.4-3.3` down to `2.7-2.6`) | 1.2 min |
-| 0.5-0.8 | 99.00% | 98.00% | 8 bins (same range) | 1.2 min |
-| 0.3-0.6 | 98.00% | 99.00% | 7 bins (`3.3-3.2` down to `2.7-2.6`) | 1.2 min |
-| 0.1-0.4 | 97.00% | 96.00% | 6 bins (`3.2-3.1` down to `2.7-2.6`) | 1.2 min |
+| 0.7-1.0 | 96.91% | 96.91% | 8 bins (`3.4-3.3` down to `2.7-2.6`) | 1.2 min |
+| 0.5-0.8 | 98.96% | 98.96% | 8 bins (same range) | 1.2 min |
+| 0.3-0.6 | 97.89% | 98.95% | 7 bins (`3.3-3.2` down to `2.7-2.6`) | 1.2 min |
+| 0.1-0.4 | 89.47% | 90.53% | 6 bins (`3.2-3.1` down to `2.7-2.6`) | 1.2 min |
 
 Full sweep: ~4.8 minutes, zero solve failures across any interval.
+
+(Earlier numbers, obtained under the narrower 0.60-0.85 SOH range, were
+100/100%, 99/98%, 98/99%, 97/96% for the same four intervals respectively —
+uniformly a few points higher, most noticeably at the lowest SOC interval.
+Widening the SOH range to include more heavily degraded cells makes the
+classification task modestly harder, which is the expected, physically
+sensible direction: more degradation variance means more overlap between
+the two chemistries' dV/dQ signatures.)
 
 ## Interpretation
 
@@ -51,7 +69,7 @@ Full sweep: ~4.8 minutes, zero solve failures across any interval.
 identical coverage filter to a *pulse-protocol* + randomized-discharge-rate
 dataset collapsed 3 of 4 intervals to zero usable bins, and the one interval
 that survived dropped from 96.9% to 81.6%. Here, every interval keeps 6-8
-bins and 96-100% accuracy.
+bins and 89-99% accuracy.
 
 The likely reason is mechanical, not a sign the fix wasn't applied correctly
 (re-verified directly: bin count on a small sample dropped from 21 to 8 with
