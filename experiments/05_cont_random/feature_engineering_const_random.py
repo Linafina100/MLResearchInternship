@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.signal import savgol_filter
 
-#Determines where to store the extracted features relative to the input CSV file
+#Determines where to store the extracted features relative to the input CSV file 
 def _default_features_dir(input_csv):
     """Sibling 'features/' dir next to input_csv's 'raw/' dir."""
     run_dir = os.path.dirname(os.path.dirname(os.path.abspath(input_csv)))

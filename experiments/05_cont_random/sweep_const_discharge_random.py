@@ -2,7 +2,7 @@
 SOC-availability sweep using the continuous-discharge protocol.
 Automates simulation, continuous dV/dQ binning, ML training, and saves all
 generated plots (discharge curves, dV/dQ profiles, confusion matrices/feature importances)
-across 4 distinct SOC intervals.
+across 4 distinct SOC intervals .
 """
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend to ensure clean headless execution

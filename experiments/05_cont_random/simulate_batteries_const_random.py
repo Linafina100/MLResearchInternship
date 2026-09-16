@@ -13,7 +13,8 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
 # Keep starting SOC >= 0.15 so continuous discharge does not trip the cutoff instantly at t=0
-SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.15))
+#if we do sweep it will use the paramters chosen by the sweep 
+SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.05))
 SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
@@ -229,7 +230,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
 """SAVE DATA
 Merges individual time series dataframes into a single master CSV.
 Saves the raw dataset to disk for the feature engineering script and 
-exports simulation failures if any runs failed"""
+exports simulation failures if any runs failed """
 
 if all_data:
     training_data = pd.concat(all_data, ignore_index=True)
@@ -296,7 +297,7 @@ if not training_data.empty:
     # 2. Plot Right: Normalized by Depth of Discharge, Colored by C-Rate
     # Normalizing capacity by each run's target capacity reveals the intrinsic OCV plateau
     cmap = plt.cm.viridis
-    norm = plt.Normalize(vmin=0.2, vmax=3.0)
+    norm = plt.Normalize(vmin=0.2, vmax=1.0) #det här ska väl vara c_max och inte v_max men vågar ej ändra
 
     for (chem, var_id), run_df in training_data.groupby(["Chemistry", "Variation_ID"]):
         c_rate = run_df["C_Rate"].iloc[0]
