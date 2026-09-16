@@ -2,3 +2,5 @@
 PyBammArtikel.pdf
 pulse_discharge_plot*.png
 continuous_discharge_plot*.png
+.DS_Store
+DownloadedData/
