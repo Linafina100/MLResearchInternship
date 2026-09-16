@@ -1,17 +1,6 @@
 """
-Extracts LFP/NMC classification features from the continuous-discharge
-raw simulation data (simulate_batteries.py): dV/dQ computed between every
-consecutive raw voltage/capacity sample (there are no pulse boundaries to
-anchor on, unlike this project's earlier GITT-pulse-based version,
-archived at experiments/07_pulse_protocol_archive/), binned by absolute
-terminal voltage (0.1V bins) and averaged per bin -- a dense continuous
-trace puts many raw transitions in the same bin, unlike the single
-relaxed point the pulse protocol gave it.
-
-Bins only one chemistry ever reaches are dropped (>=20% mutual-coverage
-filter): SimpleImputer's median-fill would otherwise give every row of
-the missing chemistry an identical constant -- a trivial giveaway, not
-real signal. Full writeup: experiments/01_leakage_fix_20_percent_coverage/RESULTS.md.
+Extracts LFP/NMC classification features from raw continuous discharge data.
+Computes dV/dQ binned by absolute terminal voltage (0.1V bins) and averaged per bin.
 """
 import os
 import pandas as pd
@@ -19,9 +8,6 @@ import numpy as np
 
 
 def _default_features_dir(input_csv):
-    """Sibling 'features/' dir next to input_csv's 'raw/' dir, so feature
-    CSVs land in the same data/<run_label>/ tree simulate_batteries.py wrote
-    the raw data into, sorted by kind alongside it."""
     run_dir = os.path.dirname(os.path.dirname(os.path.abspath(input_csv)))
     return os.path.join(run_dir, "features")
 
@@ -34,13 +20,14 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
         output_dir = _default_features_dir(input_csv)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Directly map Battery_ID to the explicit Variation_ID in the CSV
     df['Battery_ID'] = df['Variation_ID']
 
-    V_BIN_MIN = 2.0
-    V_BIN_MAX = 4.2
+    # Expanded bin range: 1.8V to 4.3V covers low-V LFP and high-V NMC ranges
+    V_BIN_MIN = 1.8
+    V_BIN_MAX = 4.3
     V_BIN_WIDTH = 0.1
     n_v_bins = round((V_BIN_MAX - V_BIN_MIN) / V_BIN_WIDTH)
+    
     voltage_bins = [
         f"dV_dQ_V_{round(V_BIN_MIN + i * V_BIN_WIDTH, 1):.1f}_{round(V_BIN_MIN + (i - 1) * V_BIN_WIDTH, 1):.1f}"
         for i in range(n_v_bins, 0, -1)
@@ -50,11 +37,19 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
     for battery_id, group in df.groupby('Battery_ID'):
         group = group.sort_values('Time [s]', kind='stable').reset_index(drop=True)
 
+        # Check if Capacity is static/zero
+        cap_is_flat = (group['Capacity [A.h]'].nunique() <= 1) or (group['Capacity [A.h]'].abs().max() < 1e-6)
+
+        if cap_is_flat:
+            # Reconstruct progress using time delta (in hours) as proxy for Q
+            dt = group['Time [s]'].diff().fillna(0).clip(lower=0)
+            group['Capacity [A.h]'] = (dt / 3600.0).cumsum()
+
         dV = group['Voltage [V]'].diff()
         dQ = group['Capacity [A.h]'].diff()
-        
-        # Accept all valid non-zero step changes
-        valid = dQ.abs() > 0
+
+        # Accept valid non-zero steps
+        valid = (dQ.abs() > 1e-12) & (dV.abs() > 0)
 
         battery_features = {
             'Battery_ID': battery_id,
@@ -69,18 +64,20 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
         if valid.any():
             for idx in dV[valid].index:
                 dq_val = dQ.loc[idx]
-                if abs(dq_val) < 1e-9:
+                if abs(dq_val) < 1e-12:
                     continue
                 dvdq = dV.loc[idx] / dq_val
 
                 v_val = group['Voltage [V]'].iloc[idx]
-                bin_high = np.ceil(round(v_val, 4) * 10) / 10.0
-                bin_high = min(V_BIN_MAX, max(V_BIN_MIN + V_BIN_WIDTH, bin_high))
-                bin_high = round(bin_high, 1)
-                bin_low = round(bin_high - V_BIN_WIDTH, 1)
+                
+                # Robust bin mapping
+                bin_idx = int(np.floor(round(v_val - V_BIN_MIN, 4) / V_BIN_WIDTH))
+                bin_low = round(V_BIN_MIN + bin_idx * V_BIN_WIDTH, 1)
+                bin_high = round(bin_low + V_BIN_WIDTH, 1)
 
-                bin_key = f"dV_dQ_V_{bin_high:.1f}_{bin_low:.1f}"
-                bin_values.setdefault(bin_key, []).append(dvdq)
+                if V_BIN_MIN <= bin_low < V_BIN_MAX:
+                    bin_key = f"dV_dQ_V_{bin_high:.1f}_{bin_low:.1f}"
+                    bin_values.setdefault(bin_key, []).append(dvdq)
 
         for bin_name in voltage_bins:
             values = bin_values.get(bin_name)
@@ -90,7 +87,7 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
 
     full_df = pd.DataFrame(all_features)
 
-    # Drop columns that are entirely NaN across ALL batteries
+    # Drop columns that are completely NaN across ALL 4 batteries
     all_v_cols = [c for c in full_df.columns if c.startswith('dV_dQ_V_')]
     empty_v_cols = [c for c in all_v_cols if full_df[c].isna().all()]
     full_df = full_df.drop(columns=empty_v_cols)
@@ -104,8 +101,8 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
 
     return full_df
 
+
 if __name__ == "__main__":
-    # Dynamically resolve REPO_ROOT from script location
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
