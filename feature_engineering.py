@@ -52,6 +52,9 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
     for battery_id, group in df.groupby('Battery_ID'):
         group = group.sort_values('Time [s]', kind='stable').reset_index(drop=True)
 
+        if len(group) < 15:  # skip corrupted/aborted runs
+            continue
+
         # dV/dQ between every consecutive raw sample -- signed (voltage
         # drops while capacity rises during discharge).
         dV = group['Voltage [V]'].diff()
