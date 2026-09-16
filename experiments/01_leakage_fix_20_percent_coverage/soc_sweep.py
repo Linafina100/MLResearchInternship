@@ -40,9 +40,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 # Continuous discharge was promoted to the root simulate_batteries.py/
 # feature_engineering.py; this sweep specifically needs the GITT pulse
-# protocol, archived at experiments/07_pulse_protocol_archive/ -- inserted
+# protocol, archived at experiments/08_pulse_protocol_archive/ -- inserted
 # last (so first in sys.path) to shadow the root feature_engineering.py.
-PULSE_ARCHIVE_DIR = os.path.join(PROJECT_DIR, "experiments", "07_pulse_protocol_archive")
+PULSE_ARCHIVE_DIR = os.path.join(PROJECT_DIR, "experiments", "08_pulse_protocol_archive")
 sys.path.insert(0, PROJECT_DIR)
 sys.path.insert(0, PULSE_ARCHIVE_DIR)
 

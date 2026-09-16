@@ -9,7 +9,7 @@ tier's own target capacity so 0.6C means the same thing at 1.2/2.0/3.5 Ah.
 Chemistry pooling, capacity scaling, SOH, resistance/ambient-temperature
 modeling, RANDOM_SEED, and the output-path convention are unchanged from
 this project's earlier GITT-pulse-based version, archived at
-experiments/07_pulse_protocol_archive/ (still used by
+experiments/08_pulse_protocol_archive/ (still used by
 experiments/01_.../soc_sweep.py and
 experiments/04_.../sweep_pulse_variable_discharge.py, which specifically
 need the pulse protocol).
