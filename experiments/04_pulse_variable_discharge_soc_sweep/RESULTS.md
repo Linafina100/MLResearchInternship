@@ -22,10 +22,10 @@ alongside the existing 4-interval SOC-availability sweep.
   CSV as `Pulse_C_Rate` for transparency but confirmed to never reach the
   engineered feature CSV (not one of `feature_engineering.py`'s carried-
   through optional columns).
-- **`feature_engineering.py` and `ml_pipeline.py` are reused unchanged**
-  from the repo root -- pulse timing (which is all the step-boundary
-  detection depends on) is untouched, and `ml_pipeline.py` is
-  feature-set-agnostic.
+- **`ml_pipeline.py` is reused unchanged from the repo root** (it's
+  feature-set-agnostic); the pulse-based `feature_engineering.py` is
+  shadowed in from `experiments/07_pulse_protocol_archive/`, since root's
+  own `feature_engineering.py` is now the continuous-discharge version.
 - Same 4 SOC intervals, same sweep structure as
   `experiments/01_leakage_fix_20_percent_coverage/soc_sweep.py`.
 

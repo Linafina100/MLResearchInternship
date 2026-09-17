@@ -9,7 +9,7 @@ tier's own target capacity so 0.6C means the same thing at 1.2/2.0/3.5 Ah.
 Chemistry pooling, capacity scaling, SOH, resistance/ambient-temperature
 modeling, RANDOM_SEED, and the output-path convention are unchanged from
 this project's earlier GITT-pulse-based version, archived at
-experiments/07_pulse_protocol_archive/ (still used by
+experiments/08_pulse_protocol_archive/ (still used by
 experiments/01_.../soc_sweep.py and
 experiments/04_.../sweep_pulse_variable_discharge.py, which specifically
 need the pulse protocol).
@@ -195,9 +195,13 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             all_data.append(df)
 
 # Combine and save
-training_data = pd.concat(all_data)
-training_data.to_csv(OUTPUT_DATA_CSV, index=False)
-print(f"\nDone! Continuous-discharge data with SOC and aging saved to '{OUTPUT_DATA_CSV}'")
+if all_data:
+    training_data = pd.concat(all_data, ignore_index=True)
+    training_data.to_csv(OUTPUT_DATA_CSV, index=False)
+    print(f"\nDone! Continuous-discharge data with SOC and aging saved to '{OUTPUT_DATA_CSV}'")
+else:
+    training_data = pd.DataFrame()
+    print("\nNo data generated: every solve attempt failed.")
 
 # --- FAILURE SUMMARY ---
 total_attempts = len(CAPACITY_TARGETS_AH) * variations_per_size * len(LOWER_VOLTAGE_CUTOFF)
@@ -209,23 +213,29 @@ if FAILURE_LOG:
     print(f"Full failure log saved to '{FAILURE_LOG_CSV}'")
 
 # --- PLOTTING ---
-print("Generating continuous discharge plot...")
+# Overlay every run (not just the first LFP/NMC pair) so one failed early
+# solve can't crash plotting, and the plot shows the full spread.
+if not training_data.empty:
+    print("Generating continuous discharge plot...")
+    plt.figure(figsize=(12, 6))
+    lfp_labeled, nmc_labeled = False, False
+    for (chem, var_id), run_df in training_data.groupby(["Chemistry", "Variation_ID"]):
+        color = '#1f77b4' if chem == "LFP" else '#ff7f0e'
+        label = None
+        if chem == "LFP" and not lfp_labeled:
+            label, lfp_labeled = "LFP", True
+        elif chem == "NMC" and not nmc_labeled:
+            label, nmc_labeled = "NMC", True
+        plt.plot(run_df['Time [s]'] / 3600, run_df['Voltage [V]'], color=color, alpha=0.15, linewidth=0.8, label=label)
 
-# all_data[0]/[1] are the first LFP/NMC simulations
-lfp_sample = all_data[0]
-nmc_sample = all_data[1]
+    plt.title('Simulated Continuous Discharge Profiles (0.6C)')
+    plt.xlabel('Time [Hours]')
+    plt.ylabel('Voltage [V]')
+    plt.legend()
+    plt.grid(True)
 
-plt.figure(figsize=(12, 6))
-plt.plot(lfp_sample['Time [s]'] / 3600, lfp_sample['Voltage [V]'], label='LFP (Sample)', color='#1f77b4')
-plt.plot(nmc_sample['Time [s]'] / 3600, nmc_sample['Voltage [V]'], label='NMC (Sample)', color='#ff7f0e')
-
-plt.title('Simulated Continuous Discharge Profiles (0.6C)')
-plt.xlabel('Time [Hours]')
-plt.ylabel('Voltage [V]')
-plt.legend()
-plt.grid(True)
-
-plt.savefig(DISCHARGE_PLOT_PNG, dpi=150)
-print(f"Plot saved to '{DISCHARGE_PLOT_PNG}'")
-
-plt.show()
+    plt.savefig(DISCHARGE_PLOT_PNG, dpi=150)
+    print(f"Plot saved to '{DISCHARGE_PLOT_PNG}'")
+    plt.close()
+else:
+    print("Plot skipped: no data generated.")

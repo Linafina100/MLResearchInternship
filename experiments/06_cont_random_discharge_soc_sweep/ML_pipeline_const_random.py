@@ -197,7 +197,6 @@ def run_ml_pipeline(
         model_accuracies = {best_model_name: best_accuracy}
         print(f"{best_model_name:<25}: Accuracy = {best_accuracy * 100:.2f}%")
     else:
-        # colsample_bytree set to 1.0 so XGBoost does not subsample when feature counts are compact
         models = {
             "Random Forest": RandomForestClassifier(
                 n_estimators=150, max_depth=10, random_state=42, n_jobs=-1
@@ -207,7 +206,7 @@ def run_ml_pipeline(
                 learning_rate=0.08,
                 max_depth=4,
                 subsample=0.8,
-                colsample_bytree=1.0,
+                colsample_bytree=0.8,
                 eval_metric="logloss",
                 random_state=42,
                 n_jobs=-1,

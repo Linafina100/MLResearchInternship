@@ -107,7 +107,7 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None, min_c
     full_df = full_df.drop(columns=one_sided_cols)
     feat_cols = [c for c in feat_cols if c not in one_sided_cols]
 
-    out_name = os.path.join(output_dir, "ml_features_continuous.csv")
+    out_name = os.path.join(output_dir, "ml_features.csv")
     full_df.to_csv(out_name, index=False)
 
     valid_vals = full_df[feat_cols].notna().sum().sum()

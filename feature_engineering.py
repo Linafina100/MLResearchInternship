@@ -3,7 +3,7 @@ Extracts LFP/NMC classification features from the continuous-discharge
 raw simulation data (simulate_batteries.py): dV/dQ computed between every
 consecutive raw voltage/capacity sample (there are no pulse boundaries to
 anchor on, unlike this project's earlier GITT-pulse-based version,
-archived at experiments/07_pulse_protocol_archive/), binned by absolute
+archived at experiments/08_pulse_protocol_archive/), binned by absolute
 terminal voltage (0.1V bins) and averaged per bin -- a dense continuous
 trace puts many raw transitions in the same bin, unlike the single
 relaxed point the pulse protocol gave it.
@@ -51,6 +51,9 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
     all_features = []
     for battery_id, group in df.groupby('Battery_ID'):
         group = group.sort_values('Time [s]', kind='stable').reset_index(drop=True)
+
+        if len(group) < 15:  # skip corrupted/aborted runs
+            continue
 
         # dV/dQ between every consecutive raw sample -- signed (voltage
         # drops while capacity rises during discharge).

@@ -38,7 +38,7 @@ def run_ml_pipeline(
     # Fine-tuning uses feature_names.json to align columns, padding missing bins with NaN.
     metadata_cols = [
         'Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC',
-        'Target_Capacity_Ah', 'N_Steps',
+        'Target_Capacity_Ah',
         'Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set',
     ]
     feature_names_path = os.path.join(MODELS_DIR, "feature_names.json")
