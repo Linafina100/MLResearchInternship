@@ -133,11 +133,11 @@ def create_features_by_voltage_bins_continuous(input_csv, output_dir=None, min_c
     # would otherwise give every row of the missing chemistry an identical
     # constant -- a trivial giveaway, not real signal. See
     # experiments/01_leakage_fix_20_percent_coverage/RESULTS.md.
-    coverage_by_chem = full_df.groupby('Chemistry')[feat_cols].apply(lambda g: g.notna().mean())
+    """coverage_by_chem = full_df.groupby('Chemistry')[feat_cols].apply(lambda g: g.notna().mean())
     one_sided_cols = [c for c in feat_cols if (coverage_by_chem[c] < min_chemistry_coverage).any()]
     full_df = full_df.drop(columns=one_sided_cols)
     feat_cols = [c for c in feat_cols if c not in one_sided_cols]
-
+"""
     out_name = os.path.join(output_dir, "ml_features_continuous.csv")
     full_df.to_csv(out_name, index=False)
 
