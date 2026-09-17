@@ -23,7 +23,7 @@ RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
 OUTPUT_DATA_CSV = os.environ.get(
     "OUTPUT_DATA_CSV",
-    os.path.join(RUN_DIR, "raw", "constant_current_synthetic_battery_data.csv"),
+    os.path.join(RUN_DIR, "raw", "continuous_synthetic_battery_data.csv"),
 )
 FAILURE_LOG_CSV = os.environ.get(
     "FAILURE_LOG_CSV",
