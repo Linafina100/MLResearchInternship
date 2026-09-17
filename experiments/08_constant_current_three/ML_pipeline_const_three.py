@@ -12,7 +12,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
 
-# Default directory for trained ML artifacts (models, scalers, encoders, feature lists )
+# Default directory for trained ML artifacts (models, scalers, encoders, feature lists ) 
 MODELS_DIR = os.environ.get("MODELS_DIR", "models")
 
 

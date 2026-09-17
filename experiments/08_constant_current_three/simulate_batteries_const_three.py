@@ -6,7 +6,7 @@ import pandas as pd
 import pybamm
 
 """ REPRODUCIBILITY & CONFIGURATION
-Sets up environment controls, random number seeds, and dynamic directory management.
+Sets up environment controls, random number seeds, and dynamic directory management. 
 """
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
