@@ -13,6 +13,7 @@ def _default_features_dir(input_csv):
 
 
 def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_coverage=0.0):
+    # Reads the CALCE dataset
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
 
@@ -44,7 +45,7 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
             # Reconstruct progress using time delta (in hours) as proxy for Q
             dt = group['Time [s]'].diff().fillna(0).clip(lower=0)
             group['Capacity [A.h]'] = (dt / 3600.0).cumsum()
-
+        # Calculate differences for dV/dQ
         dV = group['Voltage [V]'].diff()
         dQ = group['Capacity [A.h]'].diff()
 
@@ -59,7 +60,7 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
             'SOH': group['SOH'].iloc[0] if 'SOH' in group.columns else 1.0,
             'Initial_SOC': group['Initial_SOC'].iloc[0] if 'Initial_SOC' in group.columns else 1.0,
         }
-
+        # Compute dV/dQ binned by absolute voltage
         bin_values = {}
         if valid.any():
             for idx in dV[valid].index:
@@ -78,11 +79,11 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
                 if V_BIN_MIN <= bin_low < V_BIN_MAX:
                     bin_key = f"dV_dQ_V_{bin_high:.1f}_{bin_low:.1f}"
                     bin_values.setdefault(bin_key, []).append(dvdq)
-
+        # Average dV/dQ values per bin
         for bin_name in voltage_bins:
             values = bin_values.get(bin_name)
             battery_features[bin_name] = float(np.mean(values)) if values else np.nan
-
+        # Collect all battery features
         all_features.append(battery_features)
 
     full_df = pd.DataFrame(all_features)
@@ -97,6 +98,7 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
     full_df.to_csv(out_name, index=False)
 
     valid_vals = full_df[feat_cols].notna().sum().sum()
+    # Print summary of the feature extraction process
     print(f"-> {out_name}: {len(full_df)} batteries, {len(feat_cols)} voltage bin columns, {valid_vals} valid entries")
 
     return full_df
