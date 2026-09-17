@@ -62,7 +62,13 @@ at two intervals.
 | 0.3-0.6 | 97.89% | 98.95% | 7 bins (`3.3-3.2` down to `2.7-2.6`) | 1.2 min |
 | 0.1-0.4 | 89.47% | 90.53% | 6 bins (`3.2-3.1` down to `2.7-2.6`) | 1.2 min |
 
-Full sweep: ~4.8 minutes, zero solve failures across any interval.
+Full sweep: ~4.8 minutes. 13 of 498 solve attempts failed at every interval
+(identical count and configs each time — all NMC, all
+`ValueError: Q_Li=... is outside the range of possible values [...]`,
+unrecovered). The failing (target Ah, SOH) combinations are the same across
+all four SOC intervals, since the error occurs during cell setup before the
+SOC window is ever applied; failed runs are excluded from the training data,
+not imputed or worked around.
 
 (Earlier numbers, obtained under the narrower 0.60-0.85 SOH range, were
 100/100%, 99/98%, 98/99%, 97/96% for the same four intervals respectively —
@@ -71,6 +77,82 @@ Widening the SOH range to include more heavily degraded cells makes the
 classification task modestly harder, which is the expected, physically
 sensible direction: more degradation variance means more overlap between
 the two chemistries' dV/dQ signatures.)
+
+## Plots
+
+Three plots per SOC interval: the raw discharge curves (all runs, plus the
+same data color-coded by C-rate), the extracted per-bin dV/dQ signature each
+classifier actually trains on, and the evaluation panel (confusion matrix +
+top-10 feature importances) for whichever model was top performer at that
+interval. Plots are copies of the run's output, saved here for reference —
+the source of truth is `data/const_random_soc_<interval>/`, which is
+regenerated (and gitignored) on every rerun.
+
+### SOC 0.7-1.0
+
+![Discharge curves, SOC 0.7-1.0](plots/discharge_curves_soc_0.7-1.0.png)
+![dV/dQ profiles, SOC 0.7-1.0](plots/dvdq_profiles_soc_0.7-1.0.png)
+![ML evaluation, SOC 0.7-1.0](plots/ml_eval_plots_soc_0.7-1.0.png)
+
+The raw curves show the expected chemistry shapes: NMC (orange) slopes
+continuously from ~3.6V down to its 1.8V cutoff, while LFP (blue) sits on a
+flat ~3.1-3.3V plateau before a sharp knee down to its 1.5V cutoff — visually
+separable even before any feature extraction. In the dV/dQ profile, this
+becomes numeric: LFP's mean profile stays near 0 V/Ah across every bin
+(flat plateau → tiny voltage derivative), while NMC's mean drops sharply,
+from ~0 at the 3.4-3.3V bin to below -30 V/Ah by 2.7-2.6V. Random Forest was
+the top performer here (96.91%, tied with XGBoost) and put 48% of its
+importance on `dV_dQ_V_3.3_3.2` alone — exactly the bin where the two mean
+profiles first pull apart in the plot above. Only 3 of 95 test samples were
+misclassified.
+
+### SOC 0.5-0.8
+
+![Discharge curves, SOC 0.5-0.8](plots/discharge_curves_soc_0.5-0.8.png)
+![dV/dQ profiles, SOC 0.5-0.8](plots/dvdq_profiles_soc_0.5-0.8.png)
+![ML evaluation, SOC 0.5-0.8](plots/ml_eval_plots_soc_0.5-0.8.png)
+
+Nearly identical pattern to 0.7-1.0, and the best-performing interval
+overall (98.96%). The dV/dQ separation is if anything slightly cleaner —
+NMC's mean profile is already below -4 V/Ah at the first bin instead of
+sitting near 0 — and Random Forest again leans on `dV_dQ_V_3.3_3.2` as the
+dominant feature (41% importance). Confusion matrix shows a single
+misclassified sample out of 96.
+
+### SOC 0.3-0.6
+
+![Discharge curves, SOC 0.3-0.6](plots/discharge_curves_soc_0.3-0.6.png)
+![dV/dQ profiles, SOC 0.3-0.6](plots/dvdq_profiles_soc_0.3-0.6.png)
+![ML evaluation, SOC 0.3-0.6](plots/ml_eval_plots_soc_0.3-0.6.png)
+
+Both mean profiles shift downward relative to the higher intervals — LFP now
+drifts to about -8 V/Ah by the lowest bin instead of staying near -2, and
+NMC starts already around -9 V/Ah at the first bin instead of near 0. The
+two profiles are still cleanly separated, just with less flat margin on the
+LFP side. XGBoost edged out Random Forest here (98.95% vs. 97.89%) and its
+importances are more spread out (`dV_dQ_V_3.2_3.1`, `2.7_2.6`, `3.1_3.0`,
+`2.8_2.7` all contributing double digits), consistent with the coverage
+filter having already dropped one bin (`3.4-3.3`, only 7 surviving) at this
+interval.
+
+### SOC 0.1-0.4
+
+![Discharge curves, SOC 0.1-0.4](plots/discharge_curves_soc_0.1-0.4.png)
+![dV/dQ profiles, SOC 0.1-0.4](plots/dvdq_profiles_soc_0.1-0.4.png)
+![ML evaluation, SOC 0.1-0.4](plots/ml_eval_plots_soc_0.1-0.4.png)
+
+The lowest and hardest interval (90.53%). The raw discharge curves cover a
+much narrower capacity range (SOC 0.1-0.4 is a smaller slice of each
+battery's discharge), but the same LFP-plateau/NMC-slope shape is still
+visible. In the dV/dQ plot, NMC's mean profile now sits around -28 V/Ah for
+every bin instead of trending down from near 0 — this window only samples
+the already-steep part of NMC's curve — and LFP has picked up a real slope
+of its own, from -2 to -8 V/Ah. The two profiles are further apart in
+absolute terms but the individual (faint) per-battery traces overlap more,
+which shows up as the most classifier errors of the sweep: XGBoost misread
+4 LFP cells as NMC and 5 NMC cells as LFP (9 of 95 test samples), also its
+most balanced importance distribution (`dV_dQ_V_3.2_3.1` at 37%, five other
+bins in the 7-18% range).
 
 ## Interpretation
 
