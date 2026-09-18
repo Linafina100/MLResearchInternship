@@ -26,7 +26,7 @@ def _default_features_dir(input_csv):
     return os.path.join(run_dir, "features")
 
 
-def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_coverage=0.2, v_bin_min=1.9):
+def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_coverage=0.2, v_bin_min=1.9, exclude_final_transition=False):
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
 
@@ -60,8 +60,21 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
         dV = group['Voltage [V]'].diff()
         dQ = group['Capacity [A.h]'].diff()
         valid = (dQ > 1e-5)
+        valid_idx = list(dV[valid].index)
 
-        if not valid.any():
+        # PyBaMM's "Discharge until X V" is event-triggered, so each
+        # battery's final raw sample is always an irregular, oversized
+        # last step landing right on the voltage cutoff -- dividing by its
+        # small-but-not-negligible dQ produces an exploded, non-physical
+        # dV/dQ value (see experiments/11_voltage_cutoff_comparison and
+        # experiments/12_exclude_termination_artifact_bins). Dropping just
+        # that one transition per battery, rather than whole bins, lets
+        # the coverage filter below reject only bins that were *never*
+        # genuinely reached by both chemistries.
+        if exclude_final_transition and len(valid_idx) > 1:
+            valid_idx = valid_idx[:-1]
+
+        if not valid_idx:
             continue
 
         battery_features = {
@@ -79,7 +92,7 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
         # Collect every point-to-point dV/dQ value into the bin its ending
         # voltage falls in, then average per bin below.
         bin_values = {}
-        for idx in dV[valid].index:
+        for idx in valid_idx:
             dvdq = dV.loc[idx] / dQ.loc[idx]
 
             v_val = group['Voltage [V]'].iloc[idx]
