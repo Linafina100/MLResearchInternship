@@ -26,7 +26,7 @@ def _default_features_dir(input_csv):
     return os.path.join(run_dir, "features")
 
 
-def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_coverage=0.2):
+def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_coverage=0.2, v_bin_min=1.9):
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
 
@@ -39,7 +39,7 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
     groupby_cols = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
     df['Battery_ID'] = df.groupby(groupby_cols).ngroup()
 
-    V_BIN_MIN = 1.9
+    V_BIN_MIN = v_bin_min
     V_BIN_MAX = 4.3
     V_BIN_WIDTH = 0.1
     n_v_bins = round((V_BIN_MAX - V_BIN_MIN) / V_BIN_WIDTH)

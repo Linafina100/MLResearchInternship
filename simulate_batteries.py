@@ -15,9 +15,9 @@ experiments/04_.../sweep_pulse_variable_discharge.py, which specifically
 need the pulse protocol).
 
 Usage: env vars SOC_RANGE_MIN/MAX, DATA_DIR, RUN_LABEL,
-OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG (all optional,
-overridable so sweep scripts can drive systematic experiments without
-duplicating this file's setup).
+OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG, LFP_LOWER_CUTOFF,
+NMC_LOWER_CUTOFF (all optional, overridable so sweep scripts can drive
+systematic experiments without duplicating this file's setup).
 """
 import os
 import pybamm
@@ -55,8 +55,8 @@ param_nmc_base = param_nmc_bases["Chen2020"]
 # target capacity so 0.6C means the same thing at 1.2/2.0/3.5 Ah.
 DISCHARGE_C_RATE = 0.6
 LOWER_VOLTAGE_CUTOFF = {
-    "LFP": 1.8,
-    "NMC": 2.3,
+    "LFP": float(os.environ.get("LFP_LOWER_CUTOFF", 1.8)),
+    "NMC": float(os.environ.get("NMC_LOWER_CUTOFF", 2.3)),
 }
 
 
