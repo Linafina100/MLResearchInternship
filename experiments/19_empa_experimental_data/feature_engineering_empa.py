@@ -1,3 +1,5 @@
+# ADAPT THIS FOR EMPA
+
 """
 Extracts LFP/NMC classification features from raw continuous discharge data.
 Computes dV/dQ binned by absolute terminal voltage (0.1V bins) and averaged per bin.
