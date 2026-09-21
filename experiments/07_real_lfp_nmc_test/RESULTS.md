@@ -100,21 +100,58 @@ cells' actual behavior across most of the voltage range — most likely a
 genuine parameter mismatch (the PyBaMM NMC parameter sets used don't
 represent these specific real cells well), not a feature-extraction bug.
 
+## Improvement attempt #2: broader C-rate diversity (no improvement)
+
+Attempt #1 ruled out the termination artifact as the dominant cause.
+This attempt tests whether wider **C-rate** diversity narrows the
+remaining gap: experiment 03's synthetic data (used so far) is a fixed
+0.6C for every battery; experiment 06's already-simulated data
+(`data/const_random_soc_*/`) draws C-rate uniformly from 0.2-1.0C per
+battery, including rates below 0.6C that should produce smaller,
+more-realistic dV/dQ magnitudes if C-rate variety is part of the gap.
+
+`evaluate_sim_to_real_broader_diversity.py` combines experiment 03's +
+experiment 06's raw data (8 SOC-interval datasets total, no
+re-simulation) as the synthetic training set — roughly double the
+training data (3,825 vs. 1,912 synthetic samples), same real test set,
+same artifact fix applied.
+
+**Result: no meaningful change.** RF 24.84% (identical), XGB 24.37%
+(marginally *worse*, within noise). The magnitude comparison confirms
+why — synthetic NMC barely moved despite doubling the training set with
+wide C-rate variety:
+
+| Bin | Real NMC | Synthetic NMC (artifact fix only) | Synthetic NMC (+ wider C-rate) |
+|---|---|---|---|
+| 3.0-2.9 | -3.36 | -19.14 | -24.41 |
+| 2.8-2.7 | -3.30 | -38.43 | -44.74 |
+| 2.7-2.6 | -5.24 | -53.33 | -50.82 |
+
+**C-rate diversity is not the lever either.** Two candidate fixes have
+now both failed to move the systematic ~5-10x magnitude gap: the
+feature-extraction artifact (attempt #1) and C-rate variety (attempt #2).
+By elimination, this points more strongly at the remaining hypothesis:
+the PyBaMM NMC parameter sets themselves (Chen2020/Mohtat2020/OKane2022)
+producing a systematically steeper simulated dV/dQ curve than these
+specific real NMC cells, regardless of discharge rate — not a pipeline
+bug, a genuine electrochemical parameter mismatch.
+
 ## Not yet done
 
-The next step is to investigate why the simulated and real dV/dQ patterns differ, especially for NMC. Possible reasons include:
-
-* The PyBaMM NMC parameters may not represent the real cells well —
-  **now the leading hypothesis**, since the termination-artifact fix
-  (feature-extraction side) didn't close the gap, pointing at something
-  upstream in the simulation/parameter choice instead.
-* The real NMC data has much coarser and more variable sampling than the simulated data.
-* The real batteries were tested using different C rates and discharge protocols than the simulations.
-  **Checked and mostly ruled out for NMC specifically**: the real NMC
-  cells' current/capacity imply roughly 0.54C, already close to the
-  0.6C used in the synthetic data. Real LFP's C-rate (6A/6Ah = ~1C) is
-  more mismatched, but LFP isn't the chemistry that's failing.
-* The simulated data may not contain enough variation in battery parameters.
-
-A possible next step is therefore to increase the variation in the simulations, for example by using more NMC parameter sets, a wider range of C rates, and a wider range of SOH values. This can show whether more diverse simulated data improves the transfer to real batteries.
+* **Leading hypothesis, unconfirmed**: the PyBaMM NMC parameter sets used
+  don't represent these specific real cells well. Two other candidates
+  (termination artifact, C-rate diversity) have now been tested and
+  ruled out as the dominant cause, by elimination strengthening this one.
+  Next step: check whether all 3 NMC parameter sets are similarly
+  mismatched, or if one is closer to real than the others (currently all
+  3 are pooled together, which could be masking a partially-working
+  parameter set).
+* The real NMC data has much coarser and more variable sampling than the
+  simulated data — not tested in this pass.
+* Real LFP's C-rate (6A/6Ah = ~1C) remains mismatched vs. the synthetic
+  0.6C/0.2-1.0C ranges tested, but LFP isn't the chemistry that's
+  failing, so this wasn't prioritized.
+* Wider SOH/resistance-factor range — experiment 06 uses the same range
+  as experiment 03 (0.50-0.85), so attempt #2 tested C-rate diversity
+  only, not SOH diversity. Would need new simulation, not attempted here.
 
