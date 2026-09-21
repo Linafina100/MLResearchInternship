@@ -136,16 +136,53 @@ producing a systematically steeper simulated dV/dQ curve than these
 specific real NMC cells, regardless of discharge rate — not a pipeline
 bug, a genuine electrochemical parameter mismatch.
 
+## Improvement attempt #3: per-NMC-parameter-set isolation (found it)
+
+Attempts #1/#2 pointed by elimination at the NMC parameter sets
+themselves. Root `simulate_batteries.py` draws each NMC battery's
+parameter set uniformly from `Chen2020`/`Mohtat2020`/`OKane2022` (recorded
+in the raw data's `Base_Parameter_Set` column) and pools all three
+together — every test so far trained on that pooled mix.
+`evaluate_sim_to_real_per_nmc_parameter_set.py` filters experiment 03's
+already-simulated NMC rows to one parameter set at a time (keeping all
+LFP rows, which only ever use one set, Prada2013) and reruns the
+sim-to-real test three times.
+
+**Result: the parameter sets are not equally mismatched — one of them
+(Mohtat2020) is responsible for essentially the entire gap.**
+
+| NMC parameter set | RF accuracy | XGB accuracy | Synthetic NMC dV/dQ range |
+|---|---|---|---|
+| Chen2020 | **83.81%** | 24.37% | -0.90 to -6.84 (close to real's -0.28 to -7.73) |
+| Mohtat2020 | 24.84% | 24.84% | -4.08 to -53.33 (still enormous) |
+| OKane2022 | **84.06%** | 24.37% | -1.08 to -18.41 (much closer to real) |
+
+Random Forest trained on Chen2020 or OKane2022 *alone* jumps to ~84% —
+up from the pooled baseline's 24.84%, a bigger single change than
+anything else tried. Mohtat2020 alone reproduces the pooled failure
+almost exactly (same 24.84%, same inflated magnitudes as the original
+pooled run), meaning its badly-mismatched dV/dQ values were dominating
+the pooled training distribution and dragging Chen2020/OKane2022's
+otherwise-reasonable signal down with them.
+
+**XGBoost did not improve with any parameter set** (stuck at
+24.37-24.84% throughout) — worth a follow-up in its own right, not
+explained here; Random Forest is the one that benefits.
+
 ## Not yet done
 
-* **Leading hypothesis, unconfirmed**: the PyBaMM NMC parameter sets used
-  don't represent these specific real cells well. Two other candidates
-  (termination artifact, C-rate diversity) have now been tested and
-  ruled out as the dominant cause, by elimination strengthening this one.
-  Next step: check whether all 3 NMC parameter sets are similarly
-  mismatched, or if one is closer to real than the others (currently all
-  3 are pooled together, which could be masking a partially-working
-  parameter set).
+* **Confirmed, actionable**: drop or down-weight Mohtat2020 from the
+  training mix (or train on Chen2020+OKane2022 pooled together, avoiding
+  Mohtat2020 specifically) and see if that combination preserves the
+  ~84% RF result while keeping some parameter-set diversity — not yet
+  tried, the natural next step.
+* Why XGBoost doesn't benefit the way RF does from the same
+  Chen2020/OKane2022-only data — unexplained, worth investigating
+  separately (default hyperparameters interacting poorly with a smaller,
+  ~1300-sample training set is one guess, not verified).
+* Understand *why* Mohtat2020 specifically diverges from these real
+  cells electrochemically (vs. Chen2020/OKane2022, which don't) — not
+  investigated at the parameter level here, only empirically detected.
 * The real NMC data has much coarser and more variable sampling than the
   simulated data — not tested in this pass.
 * Real LFP's C-rate (6A/6Ah = ~1C) remains mismatched vs. the synthetic
