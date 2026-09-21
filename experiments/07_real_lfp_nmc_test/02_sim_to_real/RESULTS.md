@@ -261,36 +261,21 @@ criterion instead, which remains untried.
 
 ## Not yet done
 
-* **Revised assessment**: neither the per-parameter-set result (attempt
-  #3) nor the pooled attempt (#4) is a robust fix. The
-  individual-parameter-set ~84% numbers rest heavily on one sparse,
-  near-binary coverage feature and don't survive combining two "good"
-  sets together — treat that result as a fragile, not-yet-actionable
-  finding rather than a validated improvement. Attempt #5's fix for the
-  underlying multi-jump cause was actively harmful (see above) and was
-  discarded, not merged.
-* Understand *why* Mohtat2020 specifically diverges from these real cells
-  electrochemically. Checked: essentially **no** synthetic NMC batteries
-  (any parameter set) leave raw samples *inside* the 2.4-2.9V zone at all
-  — the whole discharge curve jumps over it in one adaptive-solver step
-  for 99-100% of Chen2020/OKane2022 batteries and 87% of Mohtat2020's.
-  Mohtat2020 is the outlier only in that ~13% of its batteries leave a
-  stray sample there, and those remaining points are still contaminated
-  by the same near-cutoff oversized-step mechanism the `exclude_final_transition`
-  fix (experiment 14) only partially addresses — evidently more than one
-  oversized step can occur near the voltage cliff for a minority of
-  batteries, and the fix only removes the single last one. Chen2020/
-  OKane2022's apparent immunity is therefore likely coincidental (no data
-  there to be wrong about) rather than genuinely better physics.
-* A genuinely proximity-to-cutoff-based fix for the near-cutoff artifact
-  (not the relative-magnitude approach attempt #5 showed is harmful) —
-  not attempted.
-* The real NMC data has much coarser and more variable sampling than the
-  simulated data — not tested in this pass.
-* Real LFP's C-rate (6A/6Ah = ~1C) remains mismatched vs. the synthetic
-  0.6C/0.2-1.0C ranges tested, but LFP isn't the chemistry that's
-  failing, so this wasn't prioritized.
-* Wider SOH/resistance-factor range — experiment 06 uses the same range
-  as experiment 03 (0.50-0.85), so attempt #2 tested C-rate diversity
-  only, not SOH diversity. Would need new simulation, not attempted here.
+### Revised assessment
+
+The earlier results of around 84% accuracy are not considered reliable. The model was mainly relying on a sparse feature that indicated whether data was present in a specific voltage range. When two parameter sets were combined, the improvement disappeared. The 84% result should therefore be treated as a preliminary finding rather than a real improvement.
+
+Further investigation showed that the **Mohtat2020** parameter set behaves differently from the other simulations near the lower voltage range. Almost none of the Chen2020 or OKane2022 simulations contain data points between 2.4 and 2.9 V. Instead, the voltage drops across this range in a single large step. For Mohtat2020, about 13% of the simulations contain some data points in this range, but these points can still be affected by the same large step problem near the voltage cutoff.
+
+This suggests that the problem is not limited to the final step of the discharge. In some simulations, there may be **multiple large steps near the voltage cutoff**. The `exclude_final_transition` fix from experiment 14 only removes the final step, so it does not fully solve the problem.
+
+The fact that Chen2020 and OKane2022 do not show the same issue may therefore be partly coincidental. They often have no data points in the affected voltage range, so the problem simply does not appear in the extracted features.
+
+Other possible causes of the sim to real difference have not yet been tested:
+
+* **Sampling:** The real NMC data has much coarser and more variable sampling than the simulated data.
+* **C rate:** The real LFP data was collected at approximately 1C, while the simulations use lower C rates. However, LFP is not the main source of the current classification problem.
+* **SOH and resistance variation:** Experiment 06 uses the same SOH and resistance ranges as experiment 03. A wider range could be tested, but this would require new simulations.
+
+Overall, the current results suggest that the previous improvements are not robust enough to rely on. The cutoff related artifact and the difference in sampling between simulated and real data are still important issues to investigate.
 
