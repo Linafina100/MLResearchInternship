@@ -1,10 +1,10 @@
 """
-Experiment 22, Phase 1 diagnostic: find a robust `Positive particle
-diffusivity` reduction factor that brings synthetic NMC's target-zone
-(2.5-3.0V) dV/dQ magnitude down toward real NMC's -3 to -8 range
-(experiment 20's own measurement), across the actual randomized
-conditions this project's pipeline uses -- not just the single point
-checked in this experiment's plan-mode investigation.
+Experiment 20 (Part C), Phase 1 diagnostic: find a robust `Positive
+particle diffusivity` reduction factor that brings synthetic NMC's
+target-zone (2.5-3.0V) dV/dQ magnitude down toward real NMC's -3 to -8
+range (measured directly in Part A of this experiment), across the
+actual randomized conditions this project's pipeline uses -- not just
+the single point checked in this experiment's plan-mode investigation.
 
 That investigation found (single point: Chen2020, SOH=0.8, 0.15C,
 resistance_factor=0.8): reducing electrode conductivity or contact
@@ -17,18 +17,19 @@ mechanistically (slower particle-surface concentration tracking smears
 the voltage transition) -- but the safe window is narrow: 10x reduction
 worked well, 15x already degraded badly (a single extreme-outlier
 point), 20x+ collapsed to zero target-zone points entirely (the same
-failure mode experiments 18/20 characterized, now diffusivity-driven).
+failure mode Part A's t_interp work characterized, now diffusivity-
+driven).
 
 This script sweeps candidate factors across all 3 NMC parameter sets
 (Chen2020/Mohtat2020/OKane2022 -- Mohtat2020 has behaved differently
 from the other two in every prior experiment) and the real C-rate
 (0.1-0.2)/temperature (15-35C) ranges at SOH=0.8, using the same dense
-`t_interp`-and-splice method as experiments 18/20, checking: no solve
-failures, no collapse to zero target-zone points, and how close the
-resulting magnitude gets to real NMC's -3 to -8 target -- plus a check
-that bins OUTSIDE the target zone aren't badly distorted.
+`t_interp`-and-splice method as Part A, checking: no solve failures, no
+collapse to zero target-zone points, and how close the resulting
+magnitude gets to real NMC's -3 to -8 target -- plus a check that bins
+OUTSIDE the target zone aren't badly distorted.
 
-Usage: python3 experiments/22_nmc_diffusivity_tuning/diagnose_diffusivity_factor.py
+Usage: python3 experiments/20_nmc_diffusivity_tuning/diagnose_diffusivity_factor.py
 """
 import pybamm
 import numpy as np
@@ -36,7 +37,7 @@ import pandas as pd
 
 V_MIN = 1.5
 TARGET_ZONE_MIN, TARGET_ZONE_MAX = 2.5, 3.0
-REAL_NMC_TARGET_MIN, REAL_NMC_TARGET_MAX = -8.0, -3.0  # experiment 20's own real-data measurement
+REAL_NMC_TARGET_MIN, REAL_NMC_TARGET_MAX = -8.0, -3.0  # measured directly in Part A of this experiment
 OUTLIER_DVDQ_THRESHOLD = 50.0
 T_INTERP_N_POINTS = 3000
 T_INTERP_SAFETY_FRACTION = 1 - 1e-6  # verified safe in experiment 18 -- do not widen this margin
@@ -62,7 +63,7 @@ def build_param(base_params, diffusivity_factor, ambient_c):
     param["Negative electrode thickness [m]"] *= mult
     param["Positive electrode thickness [m]"] *= mult
 
-    # SOH-scaling fix (experiment 20): scale both Maximum and Initial concentration.
+    # SOH-scaling fix (Part A of this experiment): scale both Maximum and Initial concentration.
     param["Maximum concentration in negative electrode [mol.m-3]"] *= SOH
     param["Maximum concentration in positive electrode [mol.m-3]"] *= SOH
     param["Initial concentration in negative electrode [mol.m-3]"] *= SOH
@@ -179,7 +180,7 @@ def main():
                              if r["status"] == "OK" else ""))
 
     df = pd.DataFrame(results)
-    out_csv = "experiments/22_nmc_diffusivity_tuning/diagnostic_results.csv"
+    out_csv = "experiments/20_nmc_diffusivity_tuning/diagnostic_results.csv"
     df.to_csv(out_csv, index=False)
     print(f"\nFull results saved to '{out_csv}'")
 

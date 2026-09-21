@@ -1,12 +1,12 @@
 """
-Experiment 22, Phase 2: applies the diffusivity-tuning fix found in this
-experiment's Phase 1 diagnostic (diagnose_diffusivity_factor.py) to
-experiment 20's low-voltage-only, SOH=0.8 sim-to-real pipeline, on top
-of the SOH-scaling fix (experiment 20) and t_interp dense sampling
-(experiment 18) -- targeting the 3-6x dV/dQ magnitude mismatch
-experiment 20 exposed once coverage was no longer masking it (experiment
-21 confirmed post-hoc feature normalization can't fix this; it has to be
-fixed at the simulation source).
+Experiment 20 (Part C), Phase 2: applies the diffusivity-tuning fix
+found in this experiment's Phase 1 diagnostic (diagnose_diffusivity_factor.py)
+to Part A's low-voltage-only, SOH=0.8 sim-to-real pipeline, on top of
+the SOH-scaling fix and t_interp dense sampling (both Part A) --
+targeting the 3-6x dV/dQ magnitude mismatch Part A exposed once
+coverage was no longer masking it (Part B confirmed post-hoc feature
+normalization can't fix this; it has to be fixed at the simulation
+source).
 
 Fix: `Positive particle diffusivity [m2.s-1]` (NMC's own active-material
 parameter) reduced 10x. Phase 1 found this is a real, mechanistically-
@@ -21,9 +21,9 @@ NMC parameter-set pool for this experiment** rather than diluting the
 result or guessing a separate fix for it; it remains open for future
 work.
 
-Otherwise identical to experiment 20: SOH fixed at 0.8, C-rate
-randomized 0.1-0.2, ambient temperature randomized 15-35C, 1.5V cutoff
-both chemistries, dense t_interp output for every battery.
+Otherwise identical to Part A: SOH fixed at 0.8, C-rate randomized
+0.1-0.2, ambient temperature randomized 15-35C, 1.5V cutoff both
+chemistries, dense t_interp output for every battery.
 
 Usage: env vars DATA_DIR, RUN_LABEL, OUTPUT_DATA_CSV, FAILURE_LOG_CSV,
 DISCHARGE_PLOT_PNG, LFP_LOWER_CUTOFF, NMC_LOWER_CUTOFF, SOH_FIXED,
@@ -228,7 +228,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             param["Negative electrode thickness [m]"] *= mult
             param["Positive electrode thickness [m]"] *= mult
 
-            # SOH-scaling fix (experiment 20): scale BOTH Maximum AND
+            # SOH-scaling fix (Part A of this experiment): scale BOTH Maximum AND
             # Initial concentration by the same factor.
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh

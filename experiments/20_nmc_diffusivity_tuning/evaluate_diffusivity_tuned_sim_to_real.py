@@ -1,19 +1,18 @@
 """
-Sim-to-real evaluation for experiment 22, restricted to the real-world
-target zone (2.5-3.0V) -- same design as
-../20_soh_scaling_fix_sim_to_real/evaluate_soh_fix_sim_to_real.py, but
-sourcing synthetic data from this experiment's diffusivity-tuned
+Sim-to-real evaluation for experiment 20's Part C, restricted to the
+real-world target zone (2.5-3.0V) -- same design as Part A's evaluation
+script, but sourcing synthetic data from this phase's diffusivity-tuned
 simulation (SOH=0.8, C-rate 0.1-0.2, 1.5V cutoff, NMC positive particle
 diffusivity /10, Chen2020+OKane2022 only -- Mohtat2020 dropped, see
 simulate_batteries_diffusivity_tuned.py and RESULTS.md).
 
 Reports BALANCED accuracy and per-class recall alongside raw accuracy
-for every run (experiment 21's hard-won lesson: raw accuracy alone is
+for every run (Part B's hard-won lesson: raw accuracy alone is
 misleading on this real test set, 578 LFP + 1781 NMC = 75.5% NMC -- a
 model that always predicts NMC scores ~75.5% raw accuracy while
 discriminating nothing).
 
-Usage: python3 experiments/22_nmc_diffusivity_tuning/evaluate_diffusivity_tuned_sim_to_real.py
+Usage: python3 experiments/20_nmc_diffusivity_tuning/evaluate_diffusivity_tuned_sim_to_real.py
 """
 import matplotlib
 matplotlib.use("Agg")
@@ -52,7 +51,7 @@ BIN_COL_RE = re.compile(r"dV_dQ_V_([\d.]+)_([\d.]+)")
 
 
 def build_combined_raw_csv():
-    print(f"Loading experiment 22's diffusivity-tuned synthetic data from '{SYNTHETIC_RAW_CSV}'...")
+    print(f"Loading this experiment's diffusivity-tuned synthetic data from '{SYNTHETIC_RAW_CSV}'...")
     sim_df = pd.read_csv(SYNTHETIC_RAW_CSV)
     sim_df["DataKind"] = "synthetic"
     print(f"  -> {len(sim_df)} rows")
@@ -125,7 +124,7 @@ def balanced_metrics(synthetic_csv, real_csv, feature_cols):
     """Replicates ml_pipeline.py's exact preprocessing but reports BOTH
     models' balanced accuracy and per-class recall, not just raw accuracy
     -- raw accuracy alone is misleading on this imbalanced real test set
-    (578 LFP / 1781 NMC, 75.5% NMC). See experiment 21's RESULTS.md for
+    (578 LFP / 1781 NMC, 75.5% NMC). See Part B of this experiment's RESULTS.md for
     why this check is mandatory here.
     """
     synth, real = pd.read_csv(synthetic_csv), pd.read_csv(real_csv)
@@ -197,7 +196,7 @@ def main():
         print(f"  {model_name:<15} raw={raw_acc*100:.2f}%  balanced={b['balanced_accuracy']*100:.2f}%  "
               f"LFP_recall={b['LFP_recall']:.3f}  NMC_recall={b['NMC_recall']:.3f}")
     print(f"\nTop features: {sorted(results['feature_importances'].items(), key=lambda kv: kv[1], reverse=True)[:5]}")
-    print("\nFor context: experiment 20 (no diffusivity fix, all 3 NMC sets) scored raw 27.81%/25.82%, "
+    print("\nFor context: Part A (no diffusivity fix, all 3 NMC sets) scored raw 27.81%/25.82%, "
           "balanced accuracy ~50% (chance) for both models.")
 
 
