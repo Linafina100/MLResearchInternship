@@ -166,23 +166,85 @@ the pooled training distribution and dragging Chen2020/OKane2022's
 otherwise-reasonable signal down with them.
 
 **XGBoost did not improve with any parameter set** (stuck at
-24.37-24.84% throughout) — worth a follow-up in its own right, not
-explained here; Random Forest is the one that benefits.
+24.37-24.84% throughout) — investigated below.
+
+## Improvement attempt #4: Chen2020+OKane2022 pooled (does not preserve the win)
+
+The natural next step from attempt #3: train on Chen2020+OKane2022
+pooled together, dropping only Mohtat2020, hoping to keep the ~84% result
+with some parameter-set diversity restored.
+
+**Result: it doesn't work — accuracy collapses back to 24.37%, both
+models, reproduced independently two ways** (a custom sklearn pipeline
+and root `ml_pipeline.py` on the same features, to rule out an
+implementation bug before trusting the result). Confusion matrix: 1782 of
+1782 real NMC cycles misclassified as LFP.
+
+**Why: the ~84% single-parameter-set results were more fragile than they
+looked.** Checking feature importances explains it. Chen2020 alone (84%):
+
+| Bin | RF importance | NMC NaN rate |
+|---|---|---|
+| `3.4-3.3` | **36%** | 10.7% (well covered) |
+| `3.1-3.0` | 17% | 94.6% (almost entirely imputed) |
+| `3.2-3.1` | 16% | 63.5% (mostly imputed) |
+
+Random Forest is relying overwhelmingly on `dV_dQ_V_3.4_3.3` — a bin
+where synthetic NMC almost always has a real value (89% coverage) and
+synthetic LFP almost never does (99.8% NaN, imputed to a near-constant).
+This is a genuine physical difference (NMC's higher voltage range means
+it reaches this bin; LFP's plateau rarely does) rather than an artifact,
+but it's a **near-binary coverage signal**, not a rich dV/dQ-magnitude
+comparison — most of the other bins are 60-100% NaN for synthetic NMC
+even in the "working" individual-parameter-set runs, something the
+earlier headline number didn't surface.
+
+Pooling Chen2020+OKane2022 shifts the model's reliance *away* from that
+reliable bin toward the noisier, heavily-imputed ones (`3.1-3.0`: 23%
+importance, `3.2-3.1`: 22%, `3.4-3.3` down to 21%) — with more pooled
+samples, the sparse bins' locally-large magnitude differences apparently
+look more attractive to the tree-splitting criterion in aggregate, even
+though they're built on far less reliable (mostly-imputed) data. The
+result is a less robust boundary that fails on real data.
+
+**XGBoost anomaly, explained**: XGBoost hits **100% training accuracy**
+on Chen2020-alone's ~1,296-sample training set (severe overfitting to a
+small, sparse feature set) yet predicts real NMC as LFP almost universally
+(mean predicted P(NMC) for true real NMC: 0.057; 2,357 of 2,359 real
+samples predicted LFP). Its top feature is the *same* `dV_dQ_V_3.4_3.3`
+bin, even more concentrated than RF's (60% importance vs. RF's 36%) — but
+XGBoost's boosted, sequential-residual-fitting splits appear to learn
+decision thresholds tuned too specifically to the synthetic training
+distribution's exact value range, which don't transfer. Random Forest's
+bagged, averaged-across-many-trees structure is inherently more robust to
+this kind of train/test distribution shift, even when using nearly the
+same top feature — a plausible, general explanation, not confirmed by
+further hyperparameter tuning here.
 
 ## Not yet done
 
-* **Confirmed, actionable**: drop or down-weight Mohtat2020 from the
-  training mix (or train on Chen2020+OKane2022 pooled together, avoiding
-  Mohtat2020 specifically) and see if that combination preserves the
-  ~84% RF result while keeping some parameter-set diversity — not yet
-  tried, the natural next step.
-* Why XGBoost doesn't benefit the way RF does from the same
-  Chen2020/OKane2022-only data — unexplained, worth investigating
-  separately (default hyperparameters interacting poorly with a smaller,
-  ~1300-sample training set is one guess, not verified).
-* Understand *why* Mohtat2020 specifically diverges from these real
-  cells electrochemically (vs. Chen2020/OKane2022, which don't) — not
-  investigated at the parameter level here, only empirically detected.
+* **Revised assessment**: neither the per-parameter-set result nor the
+  pooled attempt is a robust fix. The individual-parameter-set ~84%
+  numbers rest heavily on one sparse, near-binary coverage feature and
+  don't survive combining two "good" sets together — treat that result
+  as a fragile, not-yet-actionable finding rather than a validated
+  improvement.
+* Understand *why* Mohtat2020 specifically diverges from these real cells
+  electrochemically. Checked: essentially **no** synthetic NMC batteries
+  (any parameter set) leave raw samples *inside* the 2.4-2.9V zone at all
+  — the whole discharge curve jumps over it in one adaptive-solver step
+  for 99-100% of Chen2020/OKane2022 batteries and 87% of Mohtat2020's.
+  Mohtat2020 is the outlier only in that ~13% of its batteries leave a
+  stray sample there, and those remaining points are still contaminated
+  by the same near-cutoff oversized-step mechanism the `exclude_final_transition`
+  fix (experiment 14) only partially addresses — evidently more than one
+  oversized step can occur near the voltage cliff for a minority of
+  batteries, and the fix only removes the single last one. Chen2020/
+  OKane2022's apparent immunity is therefore likely coincidental (no data
+  there to be wrong about) rather than genuinely better physics.
+* A more complete fix for the near-cutoff artifact (generalizing
+  `exclude_final_transition` to exclude *any* outlier-sized jump near the
+  cutoff, not just the positionally-last one) — not attempted here.
 * The real NMC data has much coarser and more variable sampling than the
   simulated data — not tested in this pass.
 * Real LFP's C-rate (6A/6Ah = ~1C) remains mismatched vs. the synthetic
