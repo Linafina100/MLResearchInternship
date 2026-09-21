@@ -55,13 +55,65 @@ Together, these experiments show that the current dV/dQ voltage bin features hav
 
 This is important when interpreting the high accuracy reported in experiments 03, 06, 11, 12, 14, and 15. Those results were obtained using simulated data and therefore show how well the model works on data generated in the same simulation environment. They do **not** show that the model can classify real batteries.
 
+## Improvement attempt #1: termination-artifact fix (no improvement)
+
+Before trying fixes, real vs. synthetic mean dV/dQ was compared directly
+per shared bin. LFP was well matched (both roughly -0 to -9 per bin), but
+synthetic NMC's magnitudes were 10-100x larger than real NMC's:
+
+| Bin | Real NMC | Synthetic NMC (baseline) |
+|---|---|---|
+| 3.0-2.9 | -3.36 | -107.75 |
+| 2.8-2.7 | -3.30 | -351.85 |
+| 2.7-2.6 | -5.24 | -53.33 |
+
+This matched the shape of a bug already found and fixed elsewhere:
+experiment 14's `exclude_final_transition` fix for a solver-termination
+artifact (PyBaMM's event-triggered discharge cutoff produces one
+oversized final step, exploding the dV/dQ estimate). That fix lives in
+**root** `feature_engineering.py`, but this experiment's synthetic-side
+extraction used `experiments/03_.../feature_engineering_continuous.py`, a
+separate local copy that never received it — a strong, direct candidate.
+
+`evaluate_sim_to_real_artifact_fix.py` reruns the identical pipeline with
+only that one change (root `feature_engineering.py`,
+`exclude_final_transition=True`, in place of
+`feature_engineering_continuous.py`).
+
+**Result: no accuracy change at all** (24.84%/24.84%, identical to the
+baseline to the decimal). The fix did remove the most extreme outliers —
+synthetic NMC's peak magnitude dropped from -351.85 to -53.33 — but the
+*systematic* gap remains:
+
+| Bin | Real NMC | Synthetic NMC (after fix) |
+|---|---|---|
+| 3.0-2.9 | -3.36 | -19.14 |
+| 2.8-2.7 | -3.30 | -38.43 |
+| 2.7-2.6 | -5.24 | -53.33 |
+
+Synthetic NMC is still ~5-10x larger than real NMC across most bins, not
+just in the artifact-driven extremes that got fixed. **The termination
+artifact was a real but minor contributor to the mismatch, not the
+dominant cause.** Something more fundamental makes PyBaMM's simulated NMC
+discharge curve steeper (larger dV/dt) than these particular real NMC
+cells' actual behavior across most of the voltage range — most likely a
+genuine parameter mismatch (the PyBaMM NMC parameter sets used don't
+represent these specific real cells well), not a feature-extraction bug.
+
 ## Not yet done
 
 The next step is to investigate why the simulated and real dV/dQ patterns differ, especially for NMC. Possible reasons include:
 
-* The PyBaMM NMC parameters may not represent the real cells well.
+* The PyBaMM NMC parameters may not represent the real cells well —
+  **now the leading hypothesis**, since the termination-artifact fix
+  (feature-extraction side) didn't close the gap, pointing at something
+  upstream in the simulation/parameter choice instead.
 * The real NMC data has much coarser and more variable sampling than the simulated data.
 * The real batteries were tested using different C rates and discharge protocols than the simulations.
+  **Checked and mostly ruled out for NMC specifically**: the real NMC
+  cells' current/capacity imply roughly 0.54C, already close to the
+  0.6C used in the synthetic data. Real LFP's C-rate (6A/6Ah = ~1C) is
+  more mismatched, but LFP isn't the chemistry that's failing.
 * The simulated data may not contain enough variation in battery parameters.
 
 A possible next step is therefore to increase the variation in the simulations, for example by using more NMC parameter sets, a wider range of C rates, and a wider range of SOH values. This can show whether more diverse simulated data improves the transfer to real batteries.
