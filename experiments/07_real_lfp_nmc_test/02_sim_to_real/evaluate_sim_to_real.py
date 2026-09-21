@@ -28,7 +28,7 @@ replicating feature_engineering_continuous.py's own deterministic
 Battery_ID assignment on the raw data (that function doesn't carry
 arbitrary metadata columns through its per-battery aggregation).
 
-Usage: python3 experiments/07_real_lfp_nmc_test/evaluate_real_data.py
+Usage: python3 experiments/07_real_lfp_nmc_test/02_sim_to_real/evaluate_sim_to_real.py
 """
 import matplotlib
 matplotlib.use("Agg")
@@ -39,12 +39,13 @@ import sys
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+EXP07_DIR = os.path.dirname(SCRIPT_DIR)  # experiments/07_real_lfp_nmc_test/, for the shared parsers
+PROJECT_DIR = os.path.dirname(os.path.dirname(EXP07_DIR))
 CONTINUOUS_EXPERIMENT_DIR = os.path.join(PROJECT_DIR, "experiments", "03_continuous_discharge_soc_sweep")
 
 sys.path.insert(0, PROJECT_DIR)                   # for the root ml_pipeline.py
 sys.path.insert(0, CONTINUOUS_EXPERIMENT_DIR)      # for feature_engineering_continuous.py
-sys.path.insert(0, SCRIPT_DIR)                     # for parse_real_lfp.py / parse_real_nmc.py
+sys.path.insert(0, EXP07_DIR)                      # for parse_real_lfp.py / parse_real_nmc.py
 
 from ml_pipeline import run_ml_pipeline
 from feature_engineering_continuous import create_features_by_voltage_bins_continuous

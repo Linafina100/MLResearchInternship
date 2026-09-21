@@ -25,7 +25,7 @@ Everything else -- real-data parsing, the combined-raw-then-extract-once
 pattern, the sim-to-real evaluation -- is unchanged, so any accuracy
 difference is attributable to this one fix.
 
-Usage: python3 experiments/07_real_lfp_nmc_test/evaluate_sim_to_real_artifact_fix.py
+Usage: python3 experiments/07_real_lfp_nmc_test/02_sim_to_real/attempt_1_artifact_fix.py
 """
 import matplotlib
 matplotlib.use("Agg")
@@ -36,10 +36,11 @@ import sys
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+EXP07_DIR = os.path.dirname(SCRIPT_DIR)  # experiments/07_real_lfp_nmc_test/, for the shared parsers
+PROJECT_DIR = os.path.dirname(os.path.dirname(EXP07_DIR))
 
 sys.path.insert(0, PROJECT_DIR)   # for root ml_pipeline.py and feature_engineering.py
-sys.path.insert(0, SCRIPT_DIR)    # for parse_real_lfp.py / parse_real_nmc.py
+sys.path.insert(0, EXP07_DIR)     # for parse_real_lfp.py / parse_real_nmc.py
 
 from ml_pipeline import run_ml_pipeline
 from feature_engineering import create_features_by_voltage_bins

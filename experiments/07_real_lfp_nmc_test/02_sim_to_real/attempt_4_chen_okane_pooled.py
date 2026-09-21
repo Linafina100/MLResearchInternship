@@ -12,7 +12,7 @@ best-performing one, which is all root ml_pipeline.py surfaces) to start
 diagnosing why XGBoost didn't improve in the per-parameter-set test even
 when Random Forest did.
 
-Usage: python3 experiments/07_real_lfp_nmc_test/evaluate_sim_to_real_chen_okane_pooled.py
+Usage: python3 experiments/07_real_lfp_nmc_test/02_sim_to_real/attempt_4_chen_okane_pooled.py
 """
 import matplotlib
 matplotlib.use("Agg")
@@ -30,10 +30,11 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+EXP07_DIR = os.path.dirname(SCRIPT_DIR)  # experiments/07_real_lfp_nmc_test/, for the shared parsers
+PROJECT_DIR = os.path.dirname(os.path.dirname(EXP07_DIR))
 
 sys.path.insert(0, PROJECT_DIR)
-sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, EXP07_DIR)
 
 from feature_engineering import create_features_by_voltage_bins
 from parse_real_lfp import parse_lfp_discharge_files

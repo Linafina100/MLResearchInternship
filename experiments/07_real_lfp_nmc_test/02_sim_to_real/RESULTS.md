@@ -1,10 +1,10 @@
-# Real LFP vs. NMC classification test: sim to real
+# Phase 2: sim-to-real classification test
 
 ## Motivation
 
 So far, all results in this project have been based on PyBaMM simulations. The goal, however, is to eventually use the classifier on real battery measurements. This means an important test is whether a model trained on simulated data can classify real batteries.
 
-The original version of this experiment instead trained and tested the model using only real data. This was not a sim to real test, so the experiment was redesigned to correctly evaluate how well simulated data transfers to real data.
+The original version of this experiment instead trained and tested the model using only real data — see `../01_real_vs_real_device_confound/RESULTS.md`, which found that design's 100% accuracy was a same-device/same-lab confound, not a chemistry-classification result. This phase redesigns the test properly: train on simulated data, test on real data (a genuine sim-to-real transfer test), which sidesteps the device-confound problem entirely by using real data on only one side of the split.
 
 ## Data
 
@@ -75,7 +75,7 @@ oversized final step, exploding the dV/dQ estimate). That fix lives in
 extraction used `experiments/03_.../feature_engineering_continuous.py`, a
 separate local copy that never received it — a strong, direct candidate.
 
-`evaluate_sim_to_real_artifact_fix.py` reruns the identical pipeline with
+`attempt_1_artifact_fix.py` reruns the identical pipeline with
 only that one change (root `feature_engineering.py`,
 `exclude_final_transition=True`, in place of
 `feature_engineering_continuous.py`).
@@ -110,7 +110,7 @@ remaining gap: experiment 03's synthetic data (used so far) is a fixed
 battery, including rates below 0.6C that should produce smaller,
 more-realistic dV/dQ magnitudes if C-rate variety is part of the gap.
 
-`evaluate_sim_to_real_broader_diversity.py` combines experiment 03's +
+`attempt_2_broader_diversity.py` combines experiment 03's +
 experiment 06's raw data (8 SOC-interval datasets total, no
 re-simulation) as the synthetic training set — roughly double the
 training data (3,825 vs. 1,912 synthetic samples), same real test set,
@@ -143,7 +143,7 @@ themselves. Root `simulate_batteries.py` draws each NMC battery's
 parameter set uniformly from `Chen2020`/`Mohtat2020`/`OKane2022` (recorded
 in the raw data's `Base_Parameter_Set` column) and pools all three
 together — every test so far trained on that pooled mix.
-`evaluate_sim_to_real_per_nmc_parameter_set.py` filters experiment 03's
+`attempt_3_per_nmc_parameter_set.py` filters experiment 03's
 already-simulated NMC rows to one parameter set at a time (keeping all
 LFP rows, which only ever use one set, Prada2013) and reruns the
 sim-to-real test three times.
@@ -221,14 +221,54 @@ this kind of train/test distribution shift, even when using nearly the
 same top feature — a plausible, general explanation, not confirmed by
 further hyperparameter tuning here.
 
+## Improvement attempt #5: magnitude-based outlier-jump exclusion (tried, harmful — discarded)
+
+Attempt #3/#4 traced the remaining low-voltage-zone contamination to a
+minority of NMC batteries (~13% of Mohtat2020's, vs. ~0-1% of
+Chen2020's/OKane2022's) leaving *more than one* oversized solver step
+near the voltage cliff — `exclude_final_transition` only drops the
+single positionally-last transition, so these batteries still
+contaminate the 2.4-2.9V bins.
+
+Tested a generalization: instead of excluding by position, exclude any
+transition whose `|dV|` is an outlier (`> K *` that battery's own median
+`|dV|`) relative to that battery's own typical step size, regardless of
+position or count. Tried on experiment 03's SOC 0.1-0.4 data (baseline
+with `exclude_final_transition` alone: RF 73.68%/XGB 75.79% on the one
+surviving bin, `dV_dQ_V_3.2_3.1`) with K = 3, 5, 10.
+
+**Result: harmful, not just ineffective.** Every tested K destroyed that
+bin entirely (zero surviving bins, both models `n/a`) — a total loss of
+the one thing that worked, not a smaller improvement. Cause: LFP's
+coverage in that bin was unaffected by K (83.5% throughout), but NMC's
+collapsed with K (43.4% → exactly 20.0% at K=10, landing right at the
+mutual-coverage threshold and getting the bin dropped). **The filter is
+systematically biased against NMC specifically** — NMC's genuine dV/dQ
+signal involves larger swings relative to its own flatter baseline than
+LFP's more uniform steps, so a per-battery *relative*-magnitude
+threshold can't distinguish "solver artifact" from "real chemistry
+signal" and strips real NMC signal preferentially.
+
+**Conclusion: `exclude_final_transition`'s position-only design is the
+safer choice, not an incomplete stand-in for a better one** — it never
+risks removing legitimate mid-curve signal. This attempt was fully
+discarded (not merged; the branch was deleted) rather than kept
+behind a flag, specifically so this finding doesn't get mistaken for a
+validated option later. **Do not retry a relative-magnitude outlier
+filter along these lines** — a real fix for the multi-jump near-cutoff
+cases would need a genuinely different, proximity-to-cutoff-based
+criterion instead, which remains untried.
+
 ## Not yet done
 
-* **Revised assessment**: neither the per-parameter-set result nor the
-  pooled attempt is a robust fix. The individual-parameter-set ~84%
-  numbers rest heavily on one sparse, near-binary coverage feature and
-  don't survive combining two "good" sets together — treat that result
-  as a fragile, not-yet-actionable finding rather than a validated
-  improvement.
+* **Revised assessment**: neither the per-parameter-set result (attempt
+  #3) nor the pooled attempt (#4) is a robust fix. The
+  individual-parameter-set ~84% numbers rest heavily on one sparse,
+  near-binary coverage feature and don't survive combining two "good"
+  sets together — treat that result as a fragile, not-yet-actionable
+  finding rather than a validated improvement. Attempt #5's fix for the
+  underlying multi-jump cause was actively harmful (see above) and was
+  discarded, not merged.
 * Understand *why* Mohtat2020 specifically diverges from these real cells
   electrochemically. Checked: essentially **no** synthetic NMC batteries
   (any parameter set) leave raw samples *inside* the 2.4-2.9V zone at all
@@ -242,9 +282,9 @@ further hyperparameter tuning here.
   batteries, and the fix only removes the single last one. Chen2020/
   OKane2022's apparent immunity is therefore likely coincidental (no data
   there to be wrong about) rather than genuinely better physics.
-* A more complete fix for the near-cutoff artifact (generalizing
-  `exclude_final_transition` to exclude *any* outlier-sized jump near the
-  cutoff, not just the positionally-last one) — not attempted here.
+* A genuinely proximity-to-cutoff-based fix for the near-cutoff artifact
+  (not the relative-magnitude approach attempt #5 showed is harmful) —
+  not attempted.
 * The real NMC data has much coarser and more variable sampling than the
   simulated data — not tested in this pass.
 * Real LFP's C-rate (6A/6Ah = ~1C) remains mismatched vs. the synthetic
