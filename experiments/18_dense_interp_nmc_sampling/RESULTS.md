@@ -85,30 +85,72 @@ outlier filter was already shown harmful and NMC-biased in experiment
 same underlying tension between "artifact" and "genuine but extreme
 signal").
 
-## Conclusion
+## Follow-up: does the cliff disappear under milder, more realistic recycling conditions?
 
-`t_interp` is a real, mechanistically sound technique -- verified to add
-genuine (not fabricated/interpolated-through-a-discontinuity) dense
-samples in the target zone in the cases where the underlying dynamics
-are smooth enough to have them. But since root `simulate_batteries.py`
-pools all 3 NMC parameter sets and SOH is meant to span a *degraded*
-range (0.50-0.85 elsewhere in this project) for the actual recycling use
-case, a full-scale application of this fix would, at best, only recover
-coverage for the Mohtat2020-parameterized third of NMC batteries (with a
-new outlier-handling problem to solve), while Chen2020/OKane2022-
-parameterized batteries (the other two-thirds) would remain exactly as
-uncovered as in experiment 16. **This does not fully close experiment
-16's coverage gap on its own.**
+The original 27-combo sweep tested SOH 0.6-1.0 and C-rate 0.2-1.0, which
+may be more aggressive than a real recycling scenario needs. Hypothesis
+tested here: the near-discontinuity is specific to *severe* degradation
+and/or *high* current, so restricting to SOH 0.8-0.95, C-rate 0.1-0.2,
+and (newly) ambient temperature 15-35C -- not modeled at all in the
+original diagnostic -- might avoid it.
 
-Two honest paths forward, not attempted here:
-1. Apply `t_interp` only where it demonstrably helps (Mohtat2020, any
-   SOH) and separately solve the outlier-handling question for it, while
-   accepting Chen2020/OKane2022 stay uncovered -- a partial, quantifiable
-   improvement rather than a full fix.
-2. Revisit candidate C from the plan-mode investigation preceding this
-   experiment (different/custom NMC parameter sets or calibrated OCP
-   curves) specifically for Chen2020/OKane2022's degraded-SOH regime,
-   since `t_interp` cannot help where the model's own physics produces a
-   genuine near-discontinuity.
+`diagnose_t_interp_density_mild_conditions.py` re-ran the same
+solve-twice-and-compare method across 3 SOH x 2 C-rate x 3 temperature x
+3 NMC parameter sets = 54 combinations, adding temperature-driven
+resistance modeling (reusing the exact pattern from
+`experiments/17_high_soh_low_crate_sim_to_real/simulate_batteries_high_soh_low_crate.py`).
 
-Full per-combination data: `diagnostic_results.csv`.
+### Result: hypothesis confirmed, with a precise SOH threshold
+
+**42/54 combinations (78%) now show genuine target-zone coverage**, up
+from 6/27 (22%) in the original sweep -- and critically, **Chen2020 and
+OKane2022 now gain substantial, perfectly clean (zero-outlier) coverage**
+(1488 and 1323 total points respectively across the sweep), not just at
+SOH=1.0 anymore:
+
+| Parameter set | SOH 0.8 | SOH 0.875 | SOH 0.95 |
+|---|---|---|---|
+| Chen2020 | **0 points** (confirmed genuine discontinuity, see below) | 108-143 points, 0 outliers | 108-116 points, 0 outliers |
+| OKane2022 | **0 points** (same) | 117-132 points, 0 outliers | 90-102 points, 0 outliers |
+| Mohtat2020 | 22-23 points, 1-2 outliers (up to \|dV/dQ\|=67) | 27 points, 0 outliers | 27-29 points, 0-1 outliers |
+
+(Ranges are across the 2 tested C-rates; temperature made essentially no
+difference -- identical point counts and outlier counts at 15C/25C/35C
+for every parameter-set/SOH/C-rate combination, confirming ambient
+temperature isn't a meaningful driver in this range.)
+
+**The cliff has a precise SOH threshold for Chen2020/OKane2022,
+somewhere between 0.8 and 0.875** -- both still show the exact same
+near-instantaneous collapse at SOH=0.8 (verified directly again: Chen2020,
+SOH=0.8, C-rate=0.1 -- the *gentlest* condition tested -- collapses from
+3.15V to 2.22V within a single 9.5-second dense-grid step, overshooting
+the entire target zone in one step, confirming this is not a current- or
+temperature-driven effect, specifically an SOH one). From SOH=0.875
+upward, both parameter sets resolve smoothly and cleanly.
+
+**Mohtat2020's outlier problem essentially disappears too** above
+SOH=0.8: 1-2 outliers at SOH=0.8 (vs. up to 15 out of 43 points at the
+original sweep's SOH=0.6), dropping to 0-1 at SOH >= 0.875.
+
+### Revised conclusion
+
+The user's hypothesis holds, and substantially changes the practical
+picture from the first pass: **for the realistic recycling SOH range
+above ~0.875, `t_interp` cleanly recovers target-zone coverage for all
+three NMC parameter sets**, not just Mohtat2020. The remaining gap is
+narrow and specific: SOH around 0.8 and below still hits a genuine
+physical cliff for Chen2020/OKane2022 (confirmed independent of C-rate
+and temperature in the tested ranges), and would need one of the two
+paths from the original conclusion (accept the gap there, or pursue
+different/custom NMC parameters for that specific low-SOH regime) if
+recycling cells that degraded still need to be covered.
+
+**Practical implication**: if the target SOH range for this use case can
+reasonably be bounded at >=0.875 (moderately degraded, not severely), a
+full-scale synthetic batch using `t_interp` in this range is now well
+justified by this diagnostic and would be expected to substantially close
+experiment 16's coverage gap. Below that SOH, the gap persists for 2/3 of
+the NMC parameter-set pool.
+
+Full per-combination data: `diagnostic_results_mild_conditions.csv`
+(original sweep: `diagnostic_results.csv`).
