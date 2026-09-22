@@ -64,7 +64,7 @@ def run_one_interval(soc_max, soc_min):
           f"(SOC_RANGE_MIN={soc_min}, SOC_RANGE_MAX={soc_max})\n{'=' * 70}")
     t_start = time.time()
 
-    run_label = f"continuous_soc_{label}"
+    run_label = f"03_continuous_soc_{label}"
     run_dir = os.path.join(DATA_DIR, run_label)
     data_csv = os.path.join(run_dir, "raw", "advanced_synthetic_battery_data.csv")
 

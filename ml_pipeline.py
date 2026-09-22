@@ -38,7 +38,7 @@ def run_ml_pipeline(
     # Fine-tuning uses feature_names.json to align columns, padding missing bins with NaN.
     metadata_cols = [
         'Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC',
-        'Target_Capacity_Ah',
+        'Target_Capacity_Ah', 'C_Rate',
         'Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set',
     ]
     feature_names_path = os.path.join(MODELS_DIR, "feature_names.json")
@@ -114,7 +114,7 @@ def run_ml_pipeline(
         print(f"Split completed: {len(X_train)} train samples | {len(X_test)} test samples.")
 
     # Fit only on X_train to avoid leakage: clip outliers to the 1st/99th
-    # percentile (pulse start/end can be unstable), median-impute,
+    # percentile (discharge start/cutoff can be unstable), median-impute,
     # standardize. Fine-tuning reuses Phase 1's imputer/scaler instead of
     # refitting, to keep the base model's trained scale intact.
     if (

@@ -26,7 +26,7 @@ def _default_features_dir(input_csv):
     return os.path.join(run_dir, "features")
 
 
-def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_coverage=0.2, v_bin_min=1.9, exclude_final_transition=False):
+def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_coverage=0.2, v_bin_min=1.9, exclude_final_transition=True):
     print(f"Loading raw simulation data from '{input_csv}'...")
     df = pd.read_csv(input_csv)
 
@@ -85,7 +85,7 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
             'SOH': group['SOH'].iloc[0],
             'Initial_SOC': group['Initial_SOC'].iloc[0],
         }
-        for optional_col in ('Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set'):
+        for optional_col in ('C_Rate', 'Ambient_Temperature_C', 'Resistance_Factor', 'Base_Parameter_Set'):
             if optional_col in group.columns:
                 battery_features[optional_col] = group[optional_col].iloc[0]
 
@@ -134,5 +134,5 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
 
 
 if __name__ == "__main__":
-    input_file = os.path.join("data", "default", "raw", "advanced_synthetic_battery_data.csv")
+    input_file = os.path.join("data", "default", "raw", "synthetic_battery_data.csv")
     create_features_by_voltage_bins(input_file)

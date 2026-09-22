@@ -6,9 +6,9 @@ and RESULTS.md's Phase 1) so the solver-termination artifact lands well
 below the target zone instead of contaminating it.
 
 Data sources:
-- Synthetic: data/low_voltage_v1.5/raw/advanced_synthetic_battery_data.csv,
+- Synthetic: data/16_low_voltage_v1.5/raw/advanced_synthetic_battery_data.csv,
   produced by running root simulate_batteries.py with
-  LFP_LOWER_CUTOFF=1.5 NMC_LOWER_CUTOFF=1.5 RUN_LABEL=low_voltage_v1.5
+  LFP_LOWER_CUTOFF=1.5 NMC_LOWER_CUTOFF=1.5 RUN_LABEL=16_low_voltage_v1.5
   (unmodified script, env-var override only -- see RESULTS.md).
 - Real: experiment 07's own parsers (parse_real_lfp.py, parse_real_nmc.py),
   unchanged.
@@ -45,7 +45,7 @@ from feature_engineering import create_features_by_voltage_bins
 from parse_real_lfp import parse_lfp_discharge_files
 from parse_real_nmc import parse_nmc_files
 
-SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "low_voltage_v1.5", "raw", "advanced_synthetic_battery_data.csv")
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "16_low_voltage_v1.5", "raw", "advanced_synthetic_battery_data.csv")
 RAW_CSV = os.path.join(SCRIPT_DIR, "sim_and_real_raw.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']

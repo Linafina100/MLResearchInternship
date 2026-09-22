@@ -57,7 +57,7 @@ DIFFUSIVITY_FACTOR = float(os.environ.get("DIFFUSIVITY_FACTOR", 10))
 LFP_OCP_RATE_CONSTANT = float(os.environ.get("LFP_OCP_RATE_CONSTANT", -3))
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
-RUN_LABEL = os.environ.get("RUN_LABEL", "soh_0.8_lfp_ocp_tuned_v1.5")
+RUN_LABEL = os.environ.get("RUN_LABEL", "21_soh_0.8_lfp_ocp_tuned_v1.5")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
 OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))

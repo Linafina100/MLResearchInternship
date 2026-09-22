@@ -3,10 +3,10 @@ Two diagnostic plots for experiment 16, saved to data/simulating_problems/:
 
 1. artifact_cutoff_comparison.png -- the problem the cutoff hack SOLVED.
    Raw discharge curves (Voltage vs. Capacity) comparing the original
-   2.3V NMC cutoff (data/cutoff_original/, where the solver's abrupt
+   2.3V NMC cutoff (data/11_cutoff_original/, where the solver's abrupt
    event-triggered termination produces a visible final jump near/inside
    the 2.5-3.0V real-world target zone) against the lowered 1.5V cutoff
-   this experiment uses (data/low_voltage_v1.5/, where the curve instead
+   this experiment uses (data/16_low_voltage_v1.5/, where the curve instead
    passes smoothly through the target zone, artifact pushed well below
    it).
 
@@ -60,8 +60,8 @@ plt.rcParams.update({
 
 TARGET_ZONE_MIN, TARGET_ZONE_MAX = 2.5, 3.0
 
-ORIGINAL_CUTOFF_CSV = os.path.join(PROJECT_DIR, "data", "cutoff_original", "raw", "advanced_synthetic_battery_data.csv")
-LOW_CUTOFF_CSV = os.path.join(PROJECT_DIR, "data", "low_voltage_v1.5", "raw", "advanced_synthetic_battery_data.csv")
+ORIGINAL_CUTOFF_CSV = os.path.join(PROJECT_DIR, "data", "11_cutoff_original", "raw", "advanced_synthetic_battery_data.csv")
+LOW_CUTOFF_CSV = os.path.join(PROJECT_DIR, "data", "16_low_voltage_v1.5", "raw", "advanced_synthetic_battery_data.csv")
 
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 

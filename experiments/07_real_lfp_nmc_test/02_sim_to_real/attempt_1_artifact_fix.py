@@ -52,8 +52,8 @@ FEATURES_DIR = os.path.join(SCRIPT_DIR, "features_artifact_fix")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 
 SOC_INTERVAL_DIRS = [
-    "continuous_soc_0.7-1.0", "continuous_soc_0.5-0.8",
-    "continuous_soc_0.3-0.6", "continuous_soc_0.1-0.4",
+    "03_continuous_soc_0.7-1.0", "03_continuous_soc_0.5-0.8",
+    "03_continuous_soc_0.3-0.6", "03_continuous_soc_0.1-0.4",
 ]
 
 

@@ -41,7 +41,7 @@ from feature_engineering import create_features_by_voltage_bins
 from parse_real_lfp import parse_lfp_discharge_files
 from parse_real_nmc import parse_nmc_files
 
-SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "soh_0.8_diffusivity_tuned_v1.5", "raw", "advanced_synthetic_battery_data.csv")
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "20_soh_0.8_diffusivity_tuned_v1.5", "raw", "advanced_synthetic_battery_data.csv")
 RAW_CSV = os.path.join(SCRIPT_DIR, "sim_and_real_raw.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']

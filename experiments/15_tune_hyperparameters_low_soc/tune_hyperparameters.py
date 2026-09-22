@@ -45,7 +45,7 @@ sys.path.insert(0, PROJECT_DIR)  # for root feature_engineering.py
 
 from feature_engineering import create_features_by_voltage_bins
 
-DATA_CSV = os.path.join(PROJECT_DIR, "data", "continuous_soc_0.1-0.4", "raw", "advanced_synthetic_battery_data.csv")
+DATA_CSV = os.path.join(PROJECT_DIR, "data", "03_continuous_soc_0.1-0.4", "raw", "advanced_synthetic_battery_data.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 
 METADATA_COLS = [
