@@ -1,29 +1,27 @@
 """
-Simulates LFP/NMC battery discharge for the chemistry-classification
-pipeline: a continuous constant-current discharge per battery, run to the
-voltage cutoff, matching how Stena actually tests cells (no relaxation
-rests) rather than a lab-style GITT pulse protocol.
+Simulates LFP/NMC discharge for the chemistry-classification pipeline:
+one continuous constant-current discharge per battery, run to the
+voltage cutoff (no rests, no pulses -- matches how Stena tests cells).
 
-Fixed 0.6C discharge rate for every battery, current scaled to each size
-tier's own target capacity so 0.6C means the same thing at 1.2/2.0/3.5 Ah.
-Chemistry pooling, capacity scaling, SOH, resistance/ambient-temperature
-modeling, RANDOM_SEED, and the output-path convention are unchanged from
-this project's earlier GITT-pulse-based version, archived at
-experiments/08_pulse_protocol_archive/ (still used by
-experiments/01_.../soc_sweep.py and
-experiments/04_.../sweep_pulse_variable_discharge.py, which specifically
-need the pulse protocol).
+Methodology: SOH 0.8-1.0, C-rate 0.1-0.2, ambient temp 15-35C randomized
+per battery. Both Maximum and Initial electrode concentrations scaled by
+SOH. Dense t_interp two-pass solve for smooth dV/dQ. NMC positive
+particle diffusivity reduced (Chen2020/OKane2022 only, Mohtat2020
+dropped) and LFP OCP tail rate softened -- both empirical calibrations to
+real data, not first-principles physics.
 
-Usage: env vars SOC_RANGE_MIN/MAX, DATA_DIR, RUN_LABEL,
-OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG, LFP_LOWER_CUTOFF,
-NMC_LOWER_CUTOFF (all optional, overridable so sweep scripts can drive
-systematic experiments without duplicating this file's setup).
+Usage: env vars SOC_RANGE_MIN/MAX, SOH_MIN/MAX, C_RATE_MIN/MAX, DATA_DIR,
+RUN_LABEL, OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG,
+LFP_LOWER_CUTOFF, NMC_LOWER_CUTOFF, DIFFUSIVITY_FACTOR,
+LFP_OCP_RATE_CONSTANT, VARIATIONS_PER_SIZE (all optional).
 """
 import os
 import pybamm
 import pandas as pd
 import numpy as np
 import random
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 random.seed(42)
@@ -31,6 +29,12 @@ np.random.seed(42)
 
 SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
 SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
+SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
+SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))
+C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.1))
+C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 0.2))
+DIFFUSIVITY_FACTOR = float(os.environ.get("DIFFUSIVITY_FACTOR", 10))
+LFP_OCP_RATE_CONSTANT = float(os.environ.get("LFP_OCP_RATE_CONSTANT", -3))
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
 RUN_LABEL = os.environ.get("RUN_LABEL", "default")
@@ -46,18 +50,45 @@ for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG):
 model = pybamm.lithium_ion.SPM()
 
 param_lfp_base = pybamm.ParameterValues("Prada2013")
-NMC_PARAMETER_SETS = ["Chen2020", "Mohtat2020", "OKane2022"]
+# Mohtat2020 dropped: the diffusivity fix below doesn't fix its magnitude
+# mismatch (experiment 20 Part C).
+NMC_PARAMETER_SETS = ["Chen2020", "OKane2022"]
 param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
 param_nmc_base = param_nmc_bases["Chen2020"]
 
-# Continuous discharge: fixed 0.6C for every battery, run to the voltage
-# cutoff (no fixed time window). Current is scaled to each size tier's own
-# target capacity so 0.6C means the same thing at 1.2/2.0/3.5 Ah.
-DISCHARGE_C_RATE = 0.6
 LOWER_VOLTAGE_CUTOFF = {
-    "LFP": float(os.environ.get("LFP_LOWER_CUTOFF", 1.8)),
-    "NMC": float(os.environ.get("NMC_LOWER_CUTOFF", 2.3)),
+    "LFP": float(os.environ.get("LFP_LOWER_CUTOFF", 1.5)),
+    "NMC": float(os.environ.get("NMC_LOWER_CUTOFF", 1.5)),
 }
+
+
+def apply_nmc_diffusivity_fix(param, factor):
+    """Reduce Positive particle diffusivity by `factor`. Chen2020 defines
+    it as a plain constant; OKane2022 defines it as a callable
+    (sto, T) -> value -- handle both."""
+    orig = param["Positive particle diffusivity [m2.s-1]"]
+    if callable(orig):
+        def scaled_diffusivity(sto, T, _orig=orig, _factor=factor):
+            return _orig(sto, T) / _factor
+        param["Positive particle diffusivity [m2.s-1]"] = scaled_diffusivity
+    else:
+        param["Positive particle diffusivity [m2.s-1]"] = orig / factor
+    return param
+
+
+def make_lfp_ocp(rate_constant):
+    """Afshar2017's LFP OCP fit with the tail rate constant (-30
+    originally) replaced -- empirical calibration, not physics."""
+    def lfp_ocp_softened(sto):
+        c1 = -150 * sto
+        c2 = rate_constant * (1 - sto)
+        return 3.4077 - 0.020269 * sto + 0.5 * np.exp(c1) - 0.9 * np.exp(c2)
+    return lfp_ocp_softened
+
+
+def apply_lfp_ocp_fix(param, rate_constant):
+    param["Positive electrode OCP [V]"] = make_lfp_ocp(rate_constant)
+    return param
 
 
 def make_continuous_discharge_experiment(current_a, v_min):
@@ -100,6 +131,50 @@ def solve_with_cutoff(sim, initial_soc, chem, context=""):
     return sol
 
 
+T_INTERP_N_POINTS = 3000
+T_INTERP_SAFETY_FRACTION = 1 - 1e-6  # verified safe in experiments 18/20/21 -- do not widen
+
+
+def solve_dense(param, discharge_experiment, initial_soc, chem, context=""):
+    """Solve twice and splice: once default (to get the true event-
+    terminated end time), once densely t_interp-sampled up to just before
+    it, for a smooth dV/dQ curve without losing the real final segment."""
+    sim1 = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
+    sol1 = solve_with_cutoff(sim1, initial_soc, chem, context=context)
+    if sol1 is None:
+        return None
+
+    time_default = sol1["Time [s]"].entries
+    voltage_default = sol1["Terminal voltage [V]"].entries
+    capacity_default = sol1["Discharge capacity [A.h]"].entries
+    if len(time_default) < 5:
+        return time_default, voltage_default, capacity_default
+
+    tf = time_default[-1]
+    t_bound = tf * T_INTERP_SAFETY_FRACTION
+
+    try:
+        sim2 = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
+        t_interp = np.linspace(0, t_bound, T_INTERP_N_POINTS)
+        sol2 = sim2.solve(initial_soc=initial_soc, t_interp=t_interp)
+    except Exception as err:
+        print(f"  {chem}{context}: t_interp dense pass failed ({type(err).__name__}: {err}) -- "
+              f"falling back to default-density output for this battery.")
+        return time_default, voltage_default, capacity_default
+
+    time_dense = sol2["Time [s]"].entries
+    voltage_dense = sol2["Terminal voltage [V]"].entries
+    capacity_dense = sol2["Discharge capacity [A.h]"].entries
+
+    after_mask = time_default > time_dense[-1]
+    time_spliced = np.concatenate([time_dense, time_default[after_mask]])
+    voltage_spliced = np.concatenate([voltage_dense, voltage_default[after_mask]])
+    capacity_spliced = np.concatenate([capacity_dense, capacity_default[after_mask]])
+
+    order = np.argsort(time_spliced, kind="stable")
+    return time_spliced[order], voltage_spliced[order], capacity_spliced[order]
+
+
 CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
 
 
@@ -115,18 +190,22 @@ capacity_multipliers = {
     "NMC": capacity_multipliers_for(param_nmc_base, CAPACITY_TARGETS_AH),
 }
 
-variations_per_size = 83
+variations_per_size = int(os.environ.get("VARIATIONS_PER_SIZE", 83))
 
 all_data = []
 
-print("Starting continuous-discharge simulations (Random SOC/SOH)...")
+print(f"Starting continuous-discharge simulations (SOH {SOH_MIN}-{SOH_MAX}, "
+      f"C-rate {C_RATE_MIN}-{C_RATE_MAX}, cutoffs LFP={LOWER_VOLTAGE_CUTOFF['LFP']}V/NMC={LOWER_VOLTAGE_CUTOFF['NMC']}V, "
+      f"NMC parameter sets {NMC_PARAMETER_SETS} with diffusivity/{DIFFUSIVITY_FACTOR}, "
+      f"LFP OCP tail rate constant {LFP_OCP_RATE_CONSTANT})...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
         soc = random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX)
-        soh = random.uniform(0.50, 0.85)
+        soh = random.uniform(SOH_MIN, SOH_MAX)
+        c_rate = random.uniform(C_RATE_MIN, C_RATE_MAX)
 
-        ambient_c = random.uniform(0, 35)
+        ambient_c = random.uniform(15.0, 35.0)
         TEMP_RESISTANCE_COEFF = 0.02
         temp_conductivity_multiplier = 1.0 + TEMP_RESISTANCE_COEFF * (ambient_c - 25.0)
 
@@ -135,10 +214,12 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         nmc_set_name = random.choice(NMC_PARAMETER_SETS)
 
         print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | "
-              f"SOC: {soc:.2f} | SOH: {soh:.2f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
+              f"C-rate: {c_rate:.3f} | SOC: {soc:.2f} | SOH: {soh:.2f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
 
         param_lfp = param_lfp_base.copy()
+        param_lfp = apply_lfp_ocp_fix(param_lfp, LFP_OCP_RATE_CONSTANT)
         param_nmc = param_nmc_bases[nmc_set_name].copy()
+        param_nmc = apply_nmc_diffusivity_fix(param_nmc, DIFFUSIVITY_FACTOR)
 
         chemistries = {
             "LFP": param_lfp,
@@ -151,8 +232,12 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             param["Negative electrode thickness [m]"] *= mult
             param["Positive electrode thickness [m]"] *= mult
 
+            # Scale both Maximum and Initial concentration by SOH -- keeps
+            # stoichiometry invariant, avoids positive-electrode overflow.
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
+            param["Initial concentration in negative electrode [mol.m-3]"] *= soh
+            param["Initial concentration in positive electrode [mol.m-3]"] *= soh
 
             resistance_noise = random.uniform(0.8, 1.2)
             resistance_factor = min(1.0, max(0.3, soh * resistance_noise * temp_conductivity_multiplier))
@@ -162,27 +247,27 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
 
         for chem, param in chemistries.items():
             v_min = LOWER_VOLTAGE_CUTOFF[chem]
-            current_a = DISCHARGE_C_RATE * target_ah
+            current_a = c_rate * target_ah
             discharge_experiment = make_continuous_discharge_experiment(current_a, v_min)
-            sim = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
 
-            print(f"Solving {chem} (I={current_a:.4f} A / 0.6C, Vmin={v_min} V)...")
-            context = f" [target={target_ah}Ah, variation={i+1}/{variations_per_size}, SOH={soh:.3f}]"
-            sol = solve_with_cutoff(sim, soc, chem, context=context)
-            if sol is None:
+            print(f"Solving {chem} (I={current_a:.4f} A / {c_rate:.3f}C, Vmin={v_min} V, dense t_interp output)...")
+            context = f" [target={target_ah}Ah, variation={i+1}/{variations_per_size}, SOH={soh:.3f}, C-rate={c_rate:.3f}]"
+            dense = solve_dense(param, discharge_experiment, soc, chem, context=context)
+            if dense is None:
                 print(f"  Skipping {chem}: no solution data.")
                 continue
+            time_arr, voltage_arr, capacity_arr = dense
 
-            raw_voltage = sol["Terminal voltage [V]"].entries
-            noise = np.random.normal(0, 0.001, len(raw_voltage))
-            voltage_with_noise = raw_voltage + noise
+            noise = np.random.normal(0, 0.001, len(voltage_arr))
+            voltage_with_noise = voltage_arr + noise
 
             df = pd.DataFrame({
-                "Time [s]": sol["Time [s]"].entries,
+                "Time [s]": time_arr,
                 "Voltage [V]": voltage_with_noise,
-                "Capacity [A.h]": sol["Discharge capacity [A.h]"].entries,
+                "Capacity [A.h]": capacity_arr,
                 "Chemistry": chem,
                 "Target_Capacity_Ah": target_ah,
+                "C_Rate": round(c_rate, 4),
                 "Size_Multiplier": capacity_multipliers[chem][size_idx],
                 "SOH": round(soh, 3),
                 "Initial_SOC": round(soc, 3),
@@ -198,7 +283,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
 if all_data:
     training_data = pd.concat(all_data, ignore_index=True)
     training_data.to_csv(OUTPUT_DATA_CSV, index=False)
-    print(f"\nDone! Continuous-discharge data with SOC and aging saved to '{OUTPUT_DATA_CSV}'")
+    print(f"\nDone! Continuous-discharge data saved to '{OUTPUT_DATA_CSV}'")
 else:
     training_data = pd.DataFrame()
     print("\nNo data generated: every solve attempt failed.")
@@ -228,7 +313,7 @@ if not training_data.empty:
             label, nmc_labeled = "NMC", True
         plt.plot(run_df['Time [s]'] / 3600, run_df['Voltage [V]'], color=color, alpha=0.15, linewidth=0.8, label=label)
 
-    plt.title('Simulated Continuous Discharge Profiles (0.6C)')
+    plt.title('Simulated Continuous Discharge Profiles')
     plt.xlabel('Time [Hours]')
     plt.ylabel('Voltage [V]')
     plt.legend()
