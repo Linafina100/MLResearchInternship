@@ -8,7 +8,6 @@ def parse_empa_cell(bdf_parquet_path):
     """
     Parses a single EMPA cell's time-series Parquet file and its companion JSON-LD metadata file.
     """
-    # 1. Derive metadata path from parquet path
     base_path = bdf_parquet_path.split('.bdf.parquet')[0]
     meta_json_path = base_path + '.metadata.json'
     
@@ -34,19 +33,19 @@ def parse_empa_cell(bdf_parquet_path):
         except Exception as e:
             print(f"Warning: Could not parse metadata for {cell_id}: {e}")
 
-    # 2. Read time-series Parquet file (Super fast compared to CSV!)
+    # Read time-series Parquet file
     df = pd.read_parquet(bdf_parquet_path)
 
-    # 3. Map column names to project standards
+    # Map column names
     df['Time [s]'] = df['test_time_millisecond'] / 1000.0
     df['Voltage [V]'] = df['voltage_volt']
     df['Current [A]'] = df['current_ampere']
     
-    # 4. Calculate Capacity [A.h]
+    # Calculate Capacity [A.h]
     dt = df['Time [s]'].diff().fillna(0) / 3600.0
     df['Capacity [A.h]'] = (df['Current [A]'].abs() * dt).cumsum()
 
-    # 5. Inject identifiers
+    # Inject identifiers
     df['Chemistry'] = chemistry
     df['Variation_ID'] = cell_id
     df['Battery_ID'] = cell_id
@@ -60,8 +59,7 @@ def parse_empa_cell(bdf_parquet_path):
     existing_cols = [c for c in standard_cols if c in df.columns]
     return df[existing_cols]
 
-def build_empa_dataset(data_dir, output_csv_path):
-    # SEARCH FOR PARQUET INSTEAD OF CSV
+def build_empa_dataset(data_dir, output_parquet_path):
     search_pattern = os.path.join(data_dir, "**", "*.bdf.parquet")
     bdf_files = glob.glob(search_pattern, recursive=True)
     
@@ -72,8 +70,11 @@ def build_empa_dataset(data_dir, output_csv_path):
     print(f"Found {len(bdf_files)} EMPA Parquet files. Processing...")
 
     all_traces = []
-    for file_path in bdf_files:
+    total_files = len(bdf_files)
+    
+    for i, file_path in enumerate(bdf_files, 1):
         try:
+            print(f"[{i}/{total_files}] Processing {os.path.basename(file_path)}...")
             cell_df = parse_empa_cell(file_path)
             all_traces.append(cell_df)
         except Exception as e:
@@ -83,15 +84,19 @@ def build_empa_dataset(data_dir, output_csv_path):
         print("No data successfully parsed.")
         return
 
+    print("Concatenating all datasets into master dataframe...")
     master_df = pd.concat(all_traces, ignore_index=True)
     
-    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
-    master_df.to_csv(output_csv_path, index=False)
-    print(f"Successfully saved merged EMPA dataset to '{output_csv_path}' ({len(master_df)} total rows).")
+    os.makedirs(os.path.dirname(output_parquet_path), exist_ok=True)
+    
+    # SAVE AS PARQUET INSTEAD OF CSV FOR BLISTERING SPEED
+    print(f"Saving master dataset to Parquet: '{output_parquet_path}'...")
+    master_df.to_parquet(output_parquet_path, index=False)
+    print(f"Successfully finished! Saved {len(master_df)} total rows.")
     
 if __name__ == "__main__":
-    # Point this to the folder where you unpacked your EMPA RO-Crate files
     DATA_DIRECTORY = "data/empa_dataset/empa_dataset_raw"
-    OUTPUT_FILE = "data/empa_dataset/empa_merged_dataset.csv"
+    # Changed output extension to .parquet for speed and efficiency
+    OUTPUT_FILE = "data/empa_dataset/empa_merged_dataset.parquet"
     
     build_empa_dataset(DATA_DIRECTORY, OUTPUT_FILE)
