@@ -2,7 +2,7 @@
 Real-to-sim Initial_SOC sweep evaluation against the EMPA RO-Crate
 dataset. Trains ONE model exactly as experiment 22 did (synthetic
 SOH=0.8, C-rate 0.1-0.2, NMC diffusivity/10 + LFP OCP rate=-3 --
-data/soh_0.8_lfp_ocp_tuned_v1.5/, no resimulation) and tests it
+data/21_soh_0.8_lfp_ocp_tuned_v1.5/, no resimulation) and tests it
 separately against each Initial_SOC bucket of
 build_real_empa_soc_sweep_dataset.py's output, to see whether the
 sim-to-real result holds up as the real test window starts further from
@@ -43,8 +43,8 @@ sys.path.insert(0, PROJECT_DIR)  # for root feature_engineering.py
 
 from feature_engineering import create_features_by_voltage_bins
 
-SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "soh_0.8_lfp_ocp_tuned_v1.5", "raw", "advanced_synthetic_battery_data.csv")
-REAL_RAW_CSV = os.path.join(PROJECT_DIR, "data", "real_empa_soc_sweep", "raw", "real_empa_soc_sweep_raw.csv")
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "21_soh_0.8_lfp_ocp_tuned_v1.5", "raw", "advanced_synthetic_battery_data.csv")
+REAL_RAW_CSV = os.path.join(PROJECT_DIR, "data", "23_real_empa_soc_sweep", "raw", "real_empa_soc_sweep_raw.csv")
 RAW_CSV = os.path.join(SCRIPT_DIR, "sim_and_real_raw.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']

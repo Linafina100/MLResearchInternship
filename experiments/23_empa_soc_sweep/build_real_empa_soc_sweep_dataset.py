@@ -74,7 +74,7 @@ ACTIVE_MATERIAL_TO_CHEMISTRY = {
     "LithiumNickelCobaltManganeseOxide": "NMC",
 }
 
-RUN_LABEL = os.environ.get("RUN_LABEL", "real_empa_soc_sweep")
+RUN_LABEL = os.environ.get("RUN_LABEL", "23_real_empa_soc_sweep")
 OUT_RAW_CSV = os.path.join(PROJECT_DIR, "data", RUN_LABEL, "raw", "real_empa_soc_sweep_raw.csv")
 
 

@@ -134,5 +134,5 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
 
 
 if __name__ == "__main__":
-    input_file = os.path.join("data", "default", "raw", "advanced_synthetic_battery_data.csv")
+    input_file = os.path.join("data", "default", "raw", "synthetic_battery_data.csv")
     create_features_by_voltage_bins(input_file)

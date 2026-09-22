@@ -40,7 +40,7 @@ DATA_DIR = os.environ.get("DATA_DIR", "data")
 RUN_LABEL = os.environ.get("RUN_LABEL", "default")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
-OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))
+OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "synthetic_battery_data.csv"))
 FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", os.path.join(RUN_DIR, "failures", "simulation_failures.csv"))
 DISCHARGE_PLOT_PNG = os.environ.get("DISCHARGE_PLOT_PNG", os.path.join(RUN_DIR, "plots", "continuous_discharge_plot.png"))
 

@@ -91,7 +91,7 @@ def run_one_combo(soc_condition_name, soc_min, soc_max, variant_name, lfp_cutoff
           f"(LFP={lfp_cutoff}V, NMC={nmc_cutoff}V, V_BIN_MIN={v_bin_min})\n{'=' * 70}")
     t_start = time.time()
 
-    run_label = f"cutoff_{variant_name}" if soc_condition_name == "default" else f"cutoff_{variant_name}_{soc_condition_name}"
+    run_label = f"11_cutoff_{variant_name}" if soc_condition_name == "default" else f"11_cutoff_{variant_name}_{soc_condition_name}"
     run_dir = os.path.join(DATA_DIR, run_label)
     data_csv = os.path.join(run_dir, "raw", "advanced_synthetic_battery_data.csv")
 

@@ -9,7 +9,7 @@ were fit to, or were they overfit to its idiosyncrasies?
 
 Trains on the SAME already-validated synthetic data experiment 21 built
 (SOH=0.8, C-rate 0.1-0.2, NMC diffusivity/10, LFP OCP rate=-3 --
-data/soh_0.8_lfp_ocp_tuned_v1.5/, no resimulation needed) and tests
+data/21_soh_0.8_lfp_ocp_tuned_v1.5/, no resimulation needed) and tests
 against build_real_empa_dataset.py's output: real EMPA discharge cycles
 selected at SOH=0.8+/-0.02 (see that script's docstring for why C-rate
 is NOT also filtered to 0.1-0.2 here -- no cycle in this dataset
@@ -47,8 +47,8 @@ sys.path.insert(0, PROJECT_DIR)  # for root ml_pipeline.py and feature_engineeri
 from ml_pipeline import run_ml_pipeline
 from feature_engineering import create_features_by_voltage_bins
 
-SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "soh_0.8_lfp_ocp_tuned_v1.5", "raw", "advanced_synthetic_battery_data.csv")
-REAL_RAW_CSV = os.path.join(PROJECT_DIR, "data", "real_empa_soh_0.8", "raw", "real_empa_raw.csv")
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "21_soh_0.8_lfp_ocp_tuned_v1.5", "raw", "advanced_synthetic_battery_data.csv")
+REAL_RAW_CSV = os.path.join(PROJECT_DIR, "data", "22_real_empa_soh_0.8", "raw", "real_empa_raw.csv")
 RAW_CSV = os.path.join(SCRIPT_DIR, "sim_and_real_raw.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']

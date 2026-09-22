@@ -7,4 +7,9 @@ DownloadedData/
 # Nothing under data/ is ever committed (regenerable simulation output --
 # raw/feature CSVs, plots, per-run model artifacts, whatever format a given
 # experiment happens to write); root models/ is a separate, tracked folder.
-data/
+# Exception: data/README.md (layout/provenance doc, not generated output).
+# Uses data/* (not data/) so git still descends into the directory --
+# a bare "data/" pattern excludes the dir itself and negation can't
+# un-ignore files inside an excluded directory.
+data/*
+!data/README.md
