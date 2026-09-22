@@ -18,6 +18,8 @@ each folder's actual generating code, not guessed from the name.
 | `21_soh_0.8_lfp_ocp_tuned_v1.5` | `experiments/21_lfp_diffusivity_tuning/simulate_batteries_lfp_ocp_tuned.py` (still reused directly by experiments 22/23, no resimulation) |
 | `22_real_empa_soh_0.8` | `experiments/22_empa_rocrate_sim_to_real/build_real_empa_dataset.py` |
 | `23_real_empa_soc_sweep` | `experiments/23_empa_soc_sweep/build_real_empa_soc_sweep_dataset.py` |
+| `24_soh_range_0.8_1.0_v1.5` | `experiments/24_soh_range_0.8_1.0_sim_to_real/simulate_batteries_soh_range.py` |
+| `24_real_empa_soh_0.8_1.0` | `experiments/24_soh_range_0.8_1.0_sim_to_real/build_real_empa_soh_range_dataset.py` |
 | `archive/soh_0.8_fixed_v1.5` | orphaned -- likely a pre-consolidation exp20 Part A/B intermediate; its generating script was deleted when experiments 20/21 were consolidated. Nothing references it; safe to delete entirely if disk space is needed. |
 
 **Not experiment-specific, left unnumbered:**
