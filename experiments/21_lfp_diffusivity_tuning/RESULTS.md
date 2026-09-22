@@ -1,78 +1,75 @@
-# Experiment 21: does diffusivity tuning fix LFP's magnitude mismatch too?
+# Experiment 21: Does diffusivity tuning also fix the LFP magnitude mismatch?
 
 ## Motivation
 
-Experiment 20's diffusivity-tuning fix (Part C) closed most of NMC's
-dV/dQ magnitude mismatch, producing the first genuine sim-to-real
-signal in this investigation. LFP shows its own separate, systematic
-magnitude mismatch (synthetic 2-6x larger than real, documented since
-experiment 07 and never previously investigated) that was out of scope
-for experiment 20. This experiment tests whether the same methodology
-transfers directly.
+In Experiment 20, changing the diffusivity of NMC particles reduced most of the difference in dV/dQ magnitude between the synthetic and real data. This was the first clear sign that the simulations could be made more similar to the real data.
 
-## Phase 1: does the same diffusivity lever work? -- a clean, systematic negative finding
+LFP has a similar problem, but the difference is even larger. Its synthetic dV/dQ values are typically 2 to 6 times larger than the real values. This problem has been seen since Experiment 07 but had not yet been investigated.
 
-A single-point check (Prada2013, SOH=0.8, 0.15C, resistance_factor=0.8)
-found `Positive particle diffusivity` (LFP's own active-material
-parameter, baseline 5.9e-18 m2/s -- already ~680x smaller than NMC's
-baseline of 4e-15 m2/s) has **zero measurable effect** on target-zone
-dV/dQ across a 500x range (factor 1/50 to x10): mean stays at -3.38
-throughout. Two other candidates were also checked at the same point and
-also showed no effect: positive electrode exchange-current density
-(zero effect across a 100x range) and negative electrode (graphite)
-diffusivity (moved the magnitude the *wrong* direction, away from the
-target, as it was reduced).
+The goal of this experiment was therefore to test whether the same approach used for NMC could also fix the LFP mismatch.
 
-**Systematically confirmed** (`diagnose_lfp_diffusivity_factor.py`,
-mirroring experiment 20's diagnostic structure): diffusivity factors
-{1 (baseline), 5, 10, 20, 50} swept across the real C-rate
-(0.1/0.15/0.2) and temperature (15/25/35C) ranges at SOH=0.8 -- 45
-combinations, all robust (no failures, no collapse), and **the mean
-target-zone magnitude stays frozen at -3.36 to -3.37 in every single
-combination**, regardless of factor, C-rate, or temperature. Real LFP's
-target is -2.9 to -0.3; not one combination landed in it, and none moved
-meaningfully closer.
+## Phase 1: Testing diffusivity tuning
 
-| factor | Robust | Land in real target (-2.9 to -0.3) | Mean magnitude |
-|---|---|---|---|
-| 1 (baseline) | 9/9 | 0/9 | -3.37 |
-| 5 | 9/9 | 0/9 | -3.37 |
-| 10 | 9/9 | 0/9 | -3.37 |
-| 20 | 9/9 | 0/9 | -3.37 |
-| 50 | 9/9 | 0/9 | -3.36 |
+First, the same approach as for NMC was tested on LFP.
 
-## Why this is a genuinely different picture from NMC
+At one test point (Prada2013, SOH=0.8, 0.15C, resistance_factor=0.8), the LFP positive particle diffusivity was changed over a very large range. The baseline value is 5.9e-18 m²/s, which is already much lower than the NMC value of 4e-15 m²/s.
 
-NMC's smooth, single-phase solid-solution discharge curve has its
-end-of-discharge steepness governed by how fast particle-surface
-concentration (which sets the OCP) can track bulk concentration --
-exactly what solid-state diffusivity controls, which is why tuning it
-worked. LFP is different: it's well established in battery literature
-that LiFePO4 undergoes a **two-phase phase transition** during
-(de)lithiation (not a single-phase solid solution), producing its
-characteristic flat voltage plateau. The plateau's flatness -- and the
-shape of the tail past it, which is what the 2.5-3.0V target zone
-actually sits in -- is primarily a **thermodynamic property of the
-fitted OCP curve** (the two-phase equilibrium potential), not a
-transport/kinetic property. That would explain why diffusivity,
-exchange-current density, and even the *other* electrode's diffusivity
-all failed to move it: none of these change the shape of the OCP
-function itself, which is what would need to change here.
+Changing the LFP diffusivity by factors from 1/50 to 10 had essentially no effect. The mean dV/dQ magnitude stayed at about -3.38 throughout.
 
-**Conclusion of Phase 1**: the exact diffusivity-tuning methodology that
-fixed NMC's magnitude mismatch does not transfer to LFP. Don't re-attempt
-diffusivity, exchange-current density, or negative-electrode tuning for
-LFP's magnitude mismatch without new evidence. Full per-combination data:
-`diagnostic_results.csv`.
+Two other parameters were also tested:
 
-## Phase 2: directly softening LFP's OCP tail rate constant
+* Positive electrode exchange current density: no measurable effect.
+* Negative electrode diffusivity: changing it moved the magnitude in the wrong direction.
 
-Since transport/kinetics tuning doesn't work, and per user agreement to
-proceed as an explicit **empirical calibration** (not first-principles
-physics), Phase 2 directly edits LFP's OCP function itself.
+### Systematic test
 
-Prada2013's parameter set borrows Afshar2017's LFP fit (Prada2013 itself
-doesn't define an LFP OCP):
+The diffusivity test was then repeated more systematically using `diagnose_lfp_diffusivity_factor.py`.
+
+Factors of 1, 5, 10, 20 and 50 were tested across:
+
+* C-rates: 0.1, 0.15 and 0.2C
+* Temperatures: 15, 25 and 35°C
+* SOH: 0.8
+
+This gave 45 simulations in total. All simulations were successful.
+
+The result was very consistent: the mean magnitude stayed between -3.36 and -3.37 for every combination. The real LFP target range is -2.9 to -0.3, so none of the simulations reached the target or moved meaningfully closer to it.
+
+| Factor       | Successful | In real target (-2.9 to -0.3) | Mean magnitude |
+| ------------ | ---------: | ----------------------------: | -------------: |
+| 1 (baseline) |        9/9 |                           0/9 |          -3.37 |
+| 5            |        9/9 |                           0/9 |          -3.37 |
+| 10           |        9/9 |                           0/9 |          -3.37 |
+| 20           |        9/9 |                           0/9 |          -3.37 |
+| 50           |        9/9 |                           0/9 |          -3.36 |
+
+### Why this is different from NMC
+
+The reason diffusivity worked for NMC but not for LFP is likely related to how the two materials behave during discharge.
+
+NMC has a relatively smooth voltage curve. Near the end of discharge, the voltage depends strongly on how quickly lithium can move through the particle. This is affected by solid-state diffusivity, so changing diffusivity can change the shape and magnitude of dV/dQ.
+
+LFP behaves differently. LiFePO4 undergoes a two-phase transition during charging and discharging. This creates the characteristic flat voltage plateau.
+
+The part of the curve we are studying here, around 2.5 to 3.0 V, is mainly controlled by the fitted OCP curve. In other words, the shape of the OCP function has a larger effect than transport parameters such as diffusivity.
+
+This explains why changing diffusivity, exchange current density and the other electrode's diffusivity did not solve the problem. These parameters do not change the shape of the OCP function itself.
+
+### Phase 1 conclusion
+
+The diffusivity approach that worked for NMC does not work for LFP.
+
+Therefore, there is no reason to continue testing LFP diffusivity, exchange current density or negative electrode diffusivity for this particular problem unless new evidence suggests otherwise.
+
+Full results are stored in `diagnostic_results.csv`.
+
+## Phase 2: Changing the LFP OCP curve
+
+Since changing transport and kinetic parameters did not work, the next step was to directly modify the LFP OCP function.
+
+This is an **empirical calibration**, rather than an attempt to create a more physically accurate electrochemical model.
+
+The Prada2013 parameter set uses an LFP OCP function from Afshar2017:
 
 ```python
 def LFP_ocp_Afshar2017(sto):
@@ -82,112 +79,170 @@ def LFP_ocp_Afshar2017(sto):
     return k
 ```
 
-Traced by inspection (not assumed): `sto` increases toward 1 as the cell
-discharges, and near `sto=1` this evaluates to ~2.49V, confirming it
-governs the target zone. The `-0.9*exp(-30*(1-sto))` term produces the
-steep tail there. `diagnose_lfp_ocp_rate_constant.py` softens the `-30`
-rate constant (smaller magnitude spreads the same voltage drop over a
-wider stoichiometry range) and sweeps candidates across the same real
-C-rate/temperature grid at SOH=0.8.
+Inspection of the function showed that `sto` increases towards 1 as the cell discharges. Around `sto=1`, the function gives a voltage of about 2.49 V, which means that it controls the voltage region we are interested in.
 
-### Result: a wide, stable range, with a clear best match
+The important part is the `-30` rate constant:
 
-Unlike NMC's diffusivity (narrow window, collapsed above factor=12),
-this lever is smooth and continuously tunable -- no collapse observed
-even at the most extreme value tested:
+```python
+-0.9 * np.exp(-30 * (1 - sto))
+```
 
-| Rate constant | Robust | Land in real target (-2.9 to -0.3) | Mean magnitude |
-|---|---|---|---|
-| -30 (baseline) | 9/9 | 0/9 | -3.37 |
-| -10 | 9/9 | 0/9 | -3.25 |
-| -7 | 9/9 | 0/9 | -2.99 |
-| -5 | 9/9 | 9/9 | -2.57 |
-| -4 | 9/9 | 9/9 | -2.07 |
-| **-3** | 9/9 | 9/9 | **-1.31** |
-| -2 | 9/9 | 9/9 | -0.82 |
-| -1 | 9/9 | 9/9 | -0.39 (**3 new outliers** appear here, vs. the constant 9 baseline outliers at every other value -- all outside the target zone, unrelated to this change, see below) |
+This term creates the steep drop at the end of the OCP curve.
 
-**Rate=-3 is the best-centered match**: mean -1.31 against real LFP's
-own true mean of -1.28 (computed directly from its 5 real per-bin
-values: -0.31, -0.72, -1.18, -1.34, -2.87). Chosen over softer values
-(-2, -1) both because it's already the closest match and because -1
-starts introducing new outliers, a caution sign consistent with "don't
-push further than needed" from the NMC investigation.
+The experiment therefore tested smaller values for this rate constant. A smaller absolute value makes the voltage drop happen over a wider stoichiometry range, which makes the tail less steep.
 
-**A fixed 9-outlier count appears identically at every rate constant
-including the unmodified baseline** -- confirmed these are all *outside*
-the target zone (`n_outliers_zone=0` throughout) and unaffected by this
-change; a pre-existing, out-of-scope artifact, not something this fix
-introduced.
+The script `diagnose_lfp_ocp_rate_constant.py` tested different values across the same C-rate and temperature range as before.
 
-**Per-bin shape check at rate=-3** (single representative point, C-rate
-0.15/25C): the *deepest* bin matches almost exactly (synthetic -2.97 vs.
-real -2.87), but the shallower bins within the target zone are still
-~1.7-2x too large (e.g. 2.9-3.0V: synthetic -0.55 vs. real -0.31). The
-aggregate-mean match is real progress but not a uniform per-bin fix --
-the mirror image of NMC's own unevenness (there, the *shallowest* bin
-matched best).
+### Results
 
-## Phase 3: full pipeline, LFP OCP rate=-3 + NMC diffusivity/10 combined
+This parameter behaved very differently from diffusivity.
 
-`simulate_batteries_lfp_ocp_tuned.py`: everything from experiment 20
-(SOH=0.8 fixed, C-rate 0.1-0.2, 1.5V cutoff, dense `t_interp`, NMC
-Chen2020+OKane2022 with diffusivity/10, Mohtat2020 dropped) plus LFP's
-OCP tail softened to rate=-3. 498/498 simulations succeeded (matching
-every prior experiment in this fix chain).
+It could be changed smoothly over a wide range without causing simulation failures or collapse.
 
-### Result: both models now show strong, genuinely balanced sim-to-real transfer
+| Rate constant  | Successful | In real target (-2.9 to -0.3) | Mean magnitude |
+| -------------- | ---------: | ----------------------------: | -------------: |
+| -30 (baseline) |        9/9 |                           0/9 |          -3.37 |
+| -10            |        9/9 |                           0/9 |          -3.25 |
+| -7             |        9/9 |                           0/9 |          -2.99 |
+| -5             |        9/9 |                           9/9 |          -2.57 |
+| -4             |        9/9 |                           9/9 |          -2.07 |
+| **-3**         |    **9/9** |                       **9/9** |      **-1.31** |
+| -2             |        9/9 |                           9/9 |          -0.82 |
+| -1             |        9/9 |                           9/9 |          -0.39 |
 
-| Model | Raw accuracy | **Balanced accuracy** | LFP recall | NMC recall |
-|---|---|---|---|---|
-| Random Forest | 86.27% | **90.55%** | 0.990 | 0.821 |
-| **XGBoost** | 96.31% | **97.21%** | 0.990 | 0.955 |
+The value **-3** gave the closest overall match.
 
-Compare to experiment 20 Part C (NMC-only fix, LFP untouched): RF
-82.92% -> **90.55%**, and dramatically, XGBoost **52.60% (chance) ->
-97.21%**. Fixing LFP's own magnitude mismatch didn't just help LFP
-classification -- it also resolved XGBoost's complete failure mode from
-experiment 20, consistent with the hypothesis that XGBoost was
-overfitting decision thresholds to a synthetic distribution that, before
-this fix, was unrealistic for *both* chemistries at once.
+The real LFP mean is -1.28, while the simulation with rate=-3 gives -1.31. This is a very close match.
 
-**Not a class-imbalance artifact**: unlike experiment 20 Part B's
-illusory normalization gains, recall is high and balanced for *both*
-classes here (LFP 0.990, NMC 0.821-0.955) -- not one collapsed near-zero
-while the other sits near 1.0. Also re-verified the
-top feature (`dV_dQ_V_3.0_2.9`, 76% importance) has ~100% synthetic
-coverage for both chemistries -- not a fragile, sparse-coverage-driven
-signal like experiment 07's discarded attempt #4.
+The softer values -2 and -1 were not chosen because they went further than necessary. In addition, the -1 setting produced three new outliers, which is a warning sign that the parameter should not be pushed further.
 
-**Coverage remains excellent** (LFP ~99.6% throughout; NMC 100% down to
-83.1% in the deepest bin, unchanged from experiment 20 since this
-experiment didn't touch NMC's coverage fix). **Magnitude match remains
-imperfect** -- LFP synthetic is now much closer to real but still
-somewhat elevated in most bins (e.g. 2.9-2.8V: real -0.71 vs. synthetic
--1.55); NMC's magnitude match (from experiment 20, unchanged here) is
-still uneven across the zone, per that experiment's own findings. The
-classification result improved substantially despite this -- the
-remaining mismatch is evidently no longer the dominant obstacle it was.
+There were also nine outliers at every tested rate, including the original value of -30. These were outside the target zone and were unchanged by this modification. They therefore appear to be an existing issue rather than something introduced by the OCP change.
+
+### Per-bin check
+
+The mean magnitude gives a very good match at rate=-3, but the individual voltage bins are not equally well matched.
+
+For example, at 0.15C and 25°C:
+
+* Deepest bin: synthetic -2.97 vs. real -2.87
+* 2.9 to 3.0 V: synthetic -0.55 vs. real -0.31
+
+The deepest bin therefore matches very well, while the shallower bins are still around 1.7 to 2 times too large.
+
+So the OCP change clearly improves the overall magnitude, but it does not completely fix every individual bin.
+
+## Phase 3: Combining the LFP and NMC fixes
+
+The final step was to run the complete simulation pipeline with both fixes:
+
+**NMC**
+
+* Diffusivity divided by 10
+* Chen2020 + OKane2022
+* Mohtat2020 excluded
+
+**LFP**
+
+* OCP tail rate constant changed from -30 to -3
+
+Other settings from Experiment 20 were kept:
+
+* SOH = 0.8
+* C-rate = 0.1 to 0.2C
+* 1.5 V cutoff
+* Dense `t_interp` sampling
+
+All 498 simulations were successful.
+
+### Results
+
+| Model         | Raw accuracy | Balanced accuracy | LFP recall | NMC recall |
+| ------------- | -----------: | ----------------: | ---------: | ---------: |
+| Random Forest |       86.27% |        **90.55%** |      0.990 |      0.821 |
+| **XGBoost**   |       96.31% |        **97.21%** |      0.990 |      0.955 |
+
+This is a large improvement compared with Experiment 20, where only the NMC mismatch had been fixed.
+
+For Random Forest:
+
+**82.92% → 90.55% balanced accuracy**
+
+For XGBoost:
+
+**52.60% → 97.21% balanced accuracy**
+
+The XGBoost result is especially important. In Experiment 20 it was essentially at chance level. After fixing the LFP magnitude mismatch as well, it reached 97.21%.
+
+This suggests that XGBoost was previously learning from a synthetic distribution that was unrealistic for both chemistries. Fixing only NMC was therefore not enough.
+
+### Checking for class imbalance
+
+The improvement is not simply caused by one class being classified correctly while the other fails.
+
+Both classes have high recall:
+
+* LFP: 0.990
+* NMC: 0.821 for Random Forest
+* NMC: 0.955 for XGBoost
+
+This gives high balanced accuracy for both models.
+
+The main feature, `dV_dQ_V_3.0_2.9`, also has around 76% feature importance and has almost 100% synthetic coverage for both chemistries. Therefore, the result does not appear to depend on a feature with very limited data coverage.
+
+### Coverage and remaining mismatch
+
+Coverage is still very good:
+
+* LFP: about 99.6%
+* NMC: 100% in most bins, down to 83.1% in the deepest bin
+
+The magnitude match is still not perfect.
+
+For example, in the 2.9 to 2.8 V bin:
+
+* Real LFP: -0.71
+* Synthetic LFP: -1.55
+
+So the synthetic values are still somewhat too large in several bins.
+
+NMC also still has an uneven magnitude match, as described in Experiment 20.
+
+However, classification accuracy is now high despite these remaining differences. This suggests that the remaining magnitude mismatch is no longer the main problem for classification.
 
 ## Overall conclusion
 
-The two-part fix -- NMC diffusivity/10 (experiment 20) + LFP OCP tail
-softening to rate=-3 (this experiment) -- takes sim-to-real balanced
-accuracy from chance-level (~50%, everywhere in experiments 16-20) to
-**90.55% (RF) / 97.21% (XGBoost)** at the realistic SOH=0.8 threshold,
-Chen2020+OKane2022 (not Mohtat2020), LFP included. This is the strongest
-result in the entire investigation. Both fixes are explicitly empirical
-calibrations (NMC: a physical transport parameter reduced beyond its
-literature-typical range; LFP: a direct edit to a fitted OCP curve's
-functional form) -- documented as such, not presented as more accurate
-first-principles electrochemistry, per explicit agreement.
+Experiment 21 tested whether the diffusivity approach used successfully for NMC could also fix LFP's magnitude mismatch.
 
-Remaining open items, not attempted here: Mohtat2020 is still completely
-unfixed and excluded from the NMC pool; the per-bin magnitude match is
-still uneven for both chemistries even though classification accuracy is
-now high; and neither fix has been validated outside the single SOH=0.8
-point.
+It could not.
 
-Full run outputs: `sim_and_real_raw.csv`, `features/ml_features.csv`
-(gitignored, regenerable via `simulate_batteries_lfp_ocp_tuned.py` then
-`evaluate_lfp_ocp_tuned_sim_to_real.py`).
+For LFP, changing diffusivity and other transport or kinetic parameters had essentially no effect. Instead, changing the rate constant in the fitted LFP OCP curve gave a clear improvement.
+
+The value **-3** gave the closest overall match between synthetic and real LFP data.
+
+Combining this LFP fix with the NMC diffusivity/10 fix from Experiment 20 produced the strongest sim-to-real classification result so far:
+
+* **Random Forest: 90.55% balanced accuracy**
+* **XGBoost: 97.21% balanced accuracy**
+
+This is a large improvement from the approximately 50% balanced accuracy seen in the previous experiments.
+
+Both changes should be viewed as **empirical calibrations**, not as proof that these parameter values are physically more accurate.
+
+For NMC, the diffusivity was reduced beyond the typical literature range. For LFP, the fitted OCP curve was directly modified. The purpose was to make the synthetic data better match the real data, rather than to claim a more accurate first-principles electrochemical model.
+
+### Remaining open questions
+
+The following issues were not addressed in this experiment:
+
+* Mohtat2020 is still excluded from the NMC simulations.
+* The magnitude match is still uneven between individual bins.
+* The fixes have only been tested at SOH=0.8.
+* The new settings should be tested at other SOH values before concluding that they generalize.
+
+Full run outputs:
+
+`sim_and_real_raw.csv`
+
+`features/ml_features.csv`
+
+The feature file can be regenerated using `simulate_batteries_lfp_ocp_tuned.py` followed by `evaluate_lfp_ocp_tuned_sim_to_real.py`.
