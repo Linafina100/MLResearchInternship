@@ -7,7 +7,7 @@ but sourcing synthetic data from this experiment's own simulation
 simulate_batteries_high_soh_low_crate.py and diagnose_cutoff_at_low_crate.py).
 
 Data sources:
-- Synthetic: data/high_soh_low_crate_v1.5/raw/advanced_synthetic_battery_data.csv
+- Synthetic: data/17_high_soh_low_crate_v1.5/raw/advanced_synthetic_battery_data.csv
 - Real: experiment 07's own parsers (parse_real_lfp.py, parse_real_nmc.py), unchanged.
 
 Method: combine synthetic + real, extract features ONCE with root
@@ -38,7 +38,7 @@ from feature_engineering import create_features_by_voltage_bins
 from parse_real_lfp import parse_lfp_discharge_files
 from parse_real_nmc import parse_nmc_files
 
-SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "high_soh_low_crate_v1.5", "raw", "advanced_synthetic_battery_data.csv")
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "17_high_soh_low_crate_v1.5", "raw", "advanced_synthetic_battery_data.csv")
 RAW_CSV = os.path.join(SCRIPT_DIR, "sim_and_real_raw.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']

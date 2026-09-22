@@ -59,14 +59,14 @@ FEATURES_DIR = os.path.join(SCRIPT_DIR, "features_broader_diversity")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 
 EXP03_SOC_INTERVAL_DIRS = [
-    "continuous_soc_0.7-1.0", "continuous_soc_0.5-0.8",
-    "continuous_soc_0.3-0.6", "continuous_soc_0.1-0.4",
+    "03_continuous_soc_0.7-1.0", "03_continuous_soc_0.5-0.8",
+    "03_continuous_soc_0.3-0.6", "03_continuous_soc_0.1-0.4",
 ]
 EXP03_RAW_FILENAME = "advanced_synthetic_battery_data.csv"
 
 EXP06_SOC_INTERVAL_DIRS = [
-    "const_random_soc_0.7-1.0", "const_random_soc_0.5-0.8",
-    "const_random_soc_0.3-0.6", "const_random_soc_0.1-0.4",
+    "06_const_random_soc_0.7-1.0", "06_const_random_soc_0.5-0.8",
+    "06_const_random_soc_0.3-0.6", "06_const_random_soc_0.1-0.4",
 ]
 EXP06_RAW_FILENAME = "continuous_synthetic_battery_data.csv"
 

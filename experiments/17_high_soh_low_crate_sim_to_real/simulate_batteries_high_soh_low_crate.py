@@ -41,7 +41,7 @@ C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.1))
 C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 0.2))
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
-RUN_LABEL = os.environ.get("RUN_LABEL", "high_soh_low_crate_v1.5")
+RUN_LABEL = os.environ.get("RUN_LABEL", "17_high_soh_low_crate_v1.5")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
 OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))
