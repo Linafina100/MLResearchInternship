@@ -75,8 +75,9 @@ Both chemistries thin out near SOH=1.0 (expected -- fewer cycles are ever
 | | `dV_dQ_V_3.3_3.2` | Yes (LFP 49.8% cov.) | No |
 | | `dV_dQ_V_3.2_3.1` | Yes (LFP 100%) | No |
 | | `dV_dQ_V_3.1_3.0` | Yes (LFP 100%) | No |
-| (unchanged) | `dV_dQ_V_3.0_2.9` through `dV_dQ_V_2.7_2.6` | Yes | Yes |
-| | `dV_dQ_V_2.6_2.5` | **No** (NMC coverage fell to 0.198, just under threshold) | Yes |
+| (unchanged) | `dV_dQ_V_3.0_2.9` through `dV_dQ_V_2.8_2.7` | Yes | Yes |
+| | `dV_dQ_V_2.7_2.6` | Yes -- but narrowly: real NMC's own coverage here is only 0.198 (many degraded/small real NMC cells never discharge this low), and it's the synthetic side's much higher coverage blended in with the coverage filter's per-Battery_ID mean that pulls the combined figure just over the 0.2 threshold | Yes |
+| | `dV_dQ_V_2.6_2.5` | **No** -- fell below the 20% mutual-coverage threshold once combined with the far larger real-cycle population (exact combined figure not captured, since a dropped bin isn't included in the coverage printout) | Yes |
 
 Net: **7 bins survive now vs. 5 before** -- widening the SOH range let LFP's
 less-degraded (higher-SOH) cells reach further up its plateau into
