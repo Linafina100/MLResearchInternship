@@ -2,7 +2,7 @@
 
 ## Motivation
 
-In Experiment 20, changing the diffusivity of NMC particles reduced most of the difference in dV/dQ magnitude between the synthetic and real data. This was the first clear sign that the simulations could be made more similar to the real data.
+In Experiment 20, changing the diffusivity of NMC particles reduced most of the difference in dV/dQ magnitude between the synthetic and real data. This was the first clear sign that the simulations could be made more similar to the real data. Like experiment 20, this experiment trained the model with synthetic data and tested with the dataset that combined two seperate LFP and NMC data sets, described in wiki "Experimental Data".
 
 LFP has a similar problem, but the difference is even larger. Its synthetic dV/dQ values are typically 2 to 6 times larger than the real values. This problem has been seen since Experiment 07 but had not yet been investigated.
 
