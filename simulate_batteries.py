@@ -1,20 +1,3 @@
-"""
-Simulates LFP/NMC discharge for the chemistry-classification pipeline:
-one continuous constant-current discharge per battery, run to the
-voltage cutoff (no rests, no pulses -- matches how Stena tests cells).
-
-Methodology: SOH 0.8-1.0, C-rate 0.1-0.2, ambient temp 15-35C randomized
-per battery. Both Maximum and Initial electrode concentrations scaled by
-SOH. Dense t_interp two-pass solve for smooth dV/dQ. NMC positive
-particle diffusivity reduced (Chen2020/OKane2022 only, Mohtat2020
-dropped) and LFP OCP tail rate softened -- both empirical calibrations to
-real data, not first-principles physics.
-
-Usage: env vars SOC_RANGE_MIN/MAX, SOH_MIN/MAX, C_RATE_MIN/MAX, DATA_DIR,
-RUN_LABEL, OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG,
-LFP_LOWER_CUTOFF, NMC_LOWER_CUTOFF, DIFFUSIVITY_FACTOR,
-LFP_OCP_RATE_CONSTANT, VARIATIONS_PER_SIZE (all optional).
-"""
 import os
 import pybamm
 import pandas as pd
@@ -50,8 +33,7 @@ for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG):
 model = pybamm.lithium_ion.SPM()
 
 param_lfp_base = pybamm.ParameterValues("Prada2013")
-# Mohtat2020 dropped: the diffusivity fix below doesn't fix its magnitude
-# mismatch (experiment 20 Part C).
+# Mohtat2020 dropped: the diffusivity fix below doesn't fix its magnitude mismatch
 NMC_PARAMETER_SETS = ["Chen2020", "OKane2022"]
 param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
 param_nmc_base = param_nmc_bases["Chen2020"]
@@ -77,7 +59,7 @@ def apply_nmc_diffusivity_fix(param, factor):
 
 
 def make_lfp_ocp(rate_constant):
-    """Afshar2017's LFP OCP fit with the tail rate constant (-30
+    """Afshar2017's LFP OCP fit in Prada2013 with the tail rate constant (-30
     originally) replaced -- empirical calibration, not physics."""
     def lfp_ocp_softened(sto):
         c1 = -150 * sto
