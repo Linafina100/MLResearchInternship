@@ -21,6 +21,9 @@ each folder's actual generating code, not guessed from the name.
 | `24_soh_range_0.8_1.0_v1.5` | `experiments/24_soh_range_0.8_1.0_sim_to_real/simulate_batteries_soh_range.py` |
 | `24_real_empa_soh_0.8_1.0` | `experiments/24_soh_range_0.8_1.0_sim_to_real/build_real_empa_soh_range_dataset.py` |
 | `25_calce_real` | `experiments/25_calce_sim_to_real/build_calce_dataset.py` |
+| `26_real_exp07_soc_sweep` | `experiments/26_soc_sweep_three_datasets/build_real_exp07_soc_sweep.py` |
+| `26_real_empa_soc_sweep_soh_range` | `experiments/26_soc_sweep_three_datasets/build_real_empa_soc_sweep_soh_range.py` |
+| `26_real_calce_soc_sweep` | `experiments/26_soc_sweep_three_datasets/build_real_calce_soc_sweep.py` |
 | `archive/soh_0.8_fixed_v1.5` | orphaned -- likely a pre-consolidation exp20 Part A/B intermediate; its generating script was deleted when experiments 20/21 were consolidated. Nothing references it; safe to delete entirely if disk space is needed. |
 
 **Not experiment-specific, left unnumbered:**
