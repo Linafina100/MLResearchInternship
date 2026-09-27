@@ -18,8 +18,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_JSON = os.path.join(SCRIPT_DIR, "sweep_results.json")
 OUT_PNG = os.path.join(SCRIPT_DIR, "plots", "soc_sweep_accuracy.png")
 
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
-EXTRAPOLATION_POINTS = {0.4, 0.3}
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
+# No extrapolation zone: the continuous-discharge-truncated synthetic
+# training set (data/26_soh_range_continuous_discharge_truncated_v1/)
+# covers this entire grid in-distribution (each point is a real slice of
+# a full synthetic discharge, not extrapolated beyond a narrower training
+# range) -- unlike the earlier rested-initialization attempts this
+# experiment tried and abandoned, see RESULTS.md.
 
 # dataset -> (color, RF linestyle/marker, XGB linestyle/marker)
 STYLE = {
@@ -53,15 +58,12 @@ def main():
                         textcoords="offset points", fontsize=8, color=style["color"])
 
     ax.axhline(50, color="#9AA4AC", linestyle=":", linewidth=1.5, label="chance (50%)")
-    ax.axvspan(0.25, 0.45, color="#FAB219", alpha=0.08, zorder=0)
-    ax.text(0.35, ax.get_ylim()[0] if False else 3, "beyond synthetic\ntraining range",
-            fontsize=8, color="#B8860B", ha="center", va="bottom")
 
     ax.set_xlabel("Initial SOC (fraction of the cell's own capacity remaining at test time)")
     ax.set_ylabel("Balanced accuracy (%)")
     ax.set_title("Sim-to-real balanced accuracy vs. starting charge level\n"
-                 "(trained once per dataset on synthetic SOH 0.8-1.0 data, all voltage bins)")
-    ax.set_xlim(1.05, 0.25)  # descending: full charge (left) -> near-empty (right)
+                 "(continuous-discharge-truncated synthetic training, all voltage bins)")
+    ax.set_xlim(1.05, 0.0)  # descending: full charge (left) -> near-empty (right)
     ax.set_ylim(0, 105)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="lower left", fontsize=9, ncol=2)

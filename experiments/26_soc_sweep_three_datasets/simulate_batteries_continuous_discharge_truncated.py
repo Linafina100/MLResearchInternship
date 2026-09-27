@@ -1,37 +1,65 @@
 """
-Experiment 24: same validated fixes as experiment 21
-(simulate_batteries_lfp_ocp_tuned.py -- SOH-scaling, dense t_interp, NMC
-positive-particle diffusivity/10 on Chen2020+OKane2022, LFP OCP tail rate
-softened to -3), but with SOH sampled from a RANGE (default 0.8-1.0) per
-battery instead of held fixed at 0.8.
+Experiment 26: the "continuous-discharge / stressed" sibling to
+experiments/24_soh_range_0.8_1.0_sim_to_real/simulate_batteries_soh_range.py's
+"rested-initialization" method. Read that script's docstring first for the
+full investigation this fix came out of; this one only covers what's
+different and why.
 
-Every prior sim-to-real result (experiments 20-23) calibrated and tested
-at a single SOH=0.8 point. This asks whether those fixes still hold across
-a healthier slice of a battery's life, not just the one point they were
-tuned against -- see RESULTS.md.
+THE PROBLEM WITH THE OTHER SCRIPT, FOR THIS USE CASE: PyBaMM's
+`sim.solve(initial_soc=X)` initializes a RESTED battery -- uniform
+concentration profiles consistent with having sat idle at X% SOC. A real
+cell that has been ACTIVELY DISCHARGING and has simply arrived at X% SOC
+carries concentration gradients/polarization from that sustained current
+draw that a freshly-initialized "resting at X%" cell does not have. Every
+real dataset this project validates sim-to-real against (EMPA, experiment
+07's set, CALCE) is measured from continuously-cycling lab cells -- never
+rested-then-resumed mid-discharge -- so training on rested-low-SOC
+synthetic batteries represents a scenario none of that real data actually
+matches. Proven directly this session: filtering a rested-low-SOC-widened
+training set back down to Initial_SOC>=0.5 (no resimulation, same battery
+pool) restored EMPA balanced accuracy from ~50-65% back to ~99%, matching
+the un-widened baseline exactly -- conclusive evidence the rested
+initialization itself, not sampling density or numerical noise (both
+independently checked and fixed first), was the cause. See
+experiments/26_soc_sweep_three_datasets/RESULTS.md for the full ablation.
 
-Only change from experiment 21's script: SOH_FIXED -> SOH_MIN/SOH_MAX with
-soh = random.uniform(SOH_MIN, SOH_MAX) drawn per battery (mirrors the
-SOH_MIN/SOH_MAX pattern already used by root simulate_batteries.py).
-Diffusivity fix, OCP fix, C-rate range, cutoffs, capacity targets, variation
-count, t_interp splicing -- all identical to experiment 21.
+THIS SCRIPT'S FIX: don't use `initial_soc` to jump directly to a low SOC
+at all. Instead, solve ONE full discharge per battery config starting
+from (near-)full charge -- exactly like experiment 24's script already
+validates for Initial_SOC~1.0 -- then apply the SAME `truncate_at_soc()`
+function already used to build every real SOC-sweep dataset in this
+experiment (soc_truncation.py) to slice that single full trace into all
+12 target Initial_SOC variants. This makes a synthetic "battery arriving
+at 10% SOC" mean the same physical thing a real one does: an actively-
+discharging cell's tail end, not a rested restart. Bonus: only ONE PyBaMM
+solve per battery config is needed (not one per SOC point), since all 12
+variants come from slicing the same dense trace -- cheaper than any of
+the three rested-initialization resimulation attempts that preceded this.
+
+IMPORTANT -- READ BEFORE REACHING FOR EITHER SCRIPT: this is NOT the
+"correct" method in general, and does not replace or obsolete
+simulate_batteries_soh_range.py. Which script to use depends entirely on
+what the target real-world battery has actually been doing:
+  - Use THIS script (continuous-discharge-truncated) to validate against
+    continuously-cycled lab datasets, like EMPA/exp07/CALCE here.
+  - Use simulate_batteries_soh_range.py (rested `initial_soc`) for the
+    actual Stena Recycling production model: end-of-life batteries that
+    have sat idle for weeks/months before being tested cold from a rested
+    low-SOC state. That IS the physically correct model for that use case
+    -- do not "fix" that script to match this one.
+
+Otherwise identical to experiment 24's script: SOH sampled from a range
+per battery, C-rate range, both chemistry fixes (NMC diffusivity/10,
+LFP OCP rate=-3), voltage cutoffs, capacity targets, resistance/
+temperature randomization -- all copied unchanged.
 
 Usage: env vars DATA_DIR, RUN_LABEL, OUTPUT_DATA_CSV, FAILURE_LOG_CSV,
 DISCHARGE_PLOT_PNG, LFP_LOWER_CUTOFF, NMC_LOWER_CUTOFF, SOH_MIN, SOH_MAX,
-C_RATE_MIN/MAX, SOC_RANGE_MIN/MAX, DIFFUSIVITY_FACTOR, LFP_OCP_RATE_CONSTANT,
-VARIATIONS_PER_SIZE (all optional). VARIATIONS_PER_SIZE and the
-initial_soc-scaled T_INTERP_N_POINTS_FULL/T_INTERP_MIN_POINTS (see
-solve_dense) were both added for experiment 26's SOC=0.05 resimulation --
-widening SOC_RANGE_MIN downward, on its own, undersamples the
-higher-voltage bins (same battery count spread over a wider Initial_SOC
-range) AND, independently and more seriously, made the fixed 3000-point
-t_interp pass divide by near-zero dQ throughout a low-SOC battery's
-*entire* trace (not just a brief transient), since so little capacity
-remains to spread those points across -- see
-experiments/26_soc_sweep_three_datasets/RESULTS.md for both findings,
-confirmed directly against the raw data before each fix.
+C_RATE_MIN/MAX, INITIAL_SOC_FULL, DIFFUSIVITY_FACTOR, LFP_OCP_RATE_CONSTANT,
+VARIATIONS_PER_SIZE (all optional).
 """
 import os
+import sys
 import pybamm
 import pandas as pd
 import numpy as np
@@ -40,11 +68,18 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+from soc_truncation import truncate_at_soc
+
 random.seed(42)
 np.random.seed(42)
 
-SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
-SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
+# Fixed near-1.0, not randomized: every battery needs the WIDEST possible
+# capacity range available so truncate_at_soc() can slice out any of the
+# 12 target SOC points, including the deepest (0.05). 0.99 rather than a
+# literal 1.0 to avoid a possible solver edge case exactly at full charge.
+INITIAL_SOC_FULL = float(os.environ.get("INITIAL_SOC_FULL", 0.99))
 SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
 SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))
 C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.1))
@@ -52,8 +87,11 @@ C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 0.2))
 DIFFUSIVITY_FACTOR = float(os.environ.get("DIFFUSIVITY_FACTOR", 10))
 LFP_OCP_RATE_CONSTANT = float(os.environ.get("LFP_OCP_RATE_CONSTANT", -3))
 
+# Same 12-point grid this experiment's real-data build scripts use.
+SOC_TRUNCATION_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
+
 DATA_DIR = os.environ.get("DATA_DIR", "data")
-RUN_LABEL = os.environ.get("RUN_LABEL", "24_soh_range_0.8_1.0_v1.5")
+RUN_LABEL = os.environ.get("RUN_LABEL", "26_soh_range_continuous_discharge_truncated_v1")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
 OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))
@@ -149,31 +187,14 @@ def solve_with_cutoff(sim, initial_soc, chem, context=""):
     return sol
 
 
-T_INTERP_N_POINTS_FULL = 3000  # calibrated for a full-range (Initial_SOC~1.0) discharge
-T_INTERP_MIN_POINTS = 100  # floor so a very-low-SOC battery still gets enough points
+T_INTERP_N_POINTS = 3000  # fixed -- every battery here IS a full-range discharge, so
+                           # the "tiny dQ" numerical issue that forced scaling this in
+                           # the rested-initialization script doesn't apply here.
 T_INTERP_SAFETY_FRACTION = 1 - 1e-6  # verified safe in experiments 18/20/21 -- do not widen this margin
 
 
 def solve_dense(param, discharge_experiment, initial_soc, chem, context=""):
-    """Solve twice and splice, as validated in experiments 18/20/21.
-
-    T_interp point count scales with `initial_soc` (experiment 26 fix):
-    a fixed 3000 points was calibrated assuming a battery discharges its
-    full usable capacity. A battery starting at, say, Initial_SOC=0.05
-    only has ~5% as much capacity left to discharge, so spreading the
-    same 3000 points across that much smaller capacity range made each
-    t_interp step's dQ tiny enough that ordinary solver-precision noise
-    in voltage got divided into wild, non-physical dV/dQ swings
-    *throughout the entire trace* -- not a brief settling transient, and
-    not fixed by adding more battery variations (both confirmed directly
-    against real data this experiment; see
-    experiments/26_soc_sweep_three_datasets/RESULTS.md). Scaling point
-    count with initial_soc keeps each step's dQ magnitude comparable to
-    what a full-range discharge produces, regardless of how little
-    capacity a given battery starts with.
-    """
-    n_points = max(T_INTERP_MIN_POINTS, round(T_INTERP_N_POINTS_FULL * initial_soc))
-
+    """Solve twice and splice, as validated in experiments 18/20/21."""
     sim1 = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
     sol1 = solve_with_cutoff(sim1, initial_soc, chem, context=context)
     if sol1 is None:
@@ -190,7 +211,7 @@ def solve_dense(param, discharge_experiment, initial_soc, chem, context=""):
 
     try:
         sim2 = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
-        t_interp = np.linspace(0, t_bound, n_points)
+        t_interp = np.linspace(0, t_bound, T_INTERP_N_POINTS)
         sol2 = sim2.solve(initial_soc=initial_soc, t_interp=t_interp)
     except Exception as err:
         print(f"  {chem}{context}: t_interp dense pass failed ({type(err).__name__}: {err}) -- "
@@ -226,15 +247,17 @@ capacity_multipliers = {
 variations_per_size = int(os.environ.get("VARIATIONS_PER_SIZE", 83))
 
 all_data = []
+full_traces_for_plot = []
 
-print(f"Starting continuous-discharge simulations (SOH sampled {SOH_MIN}-{SOH_MAX} per battery, "
-      f"C-rate {C_RATE_MIN}-{C_RATE_MAX}, cutoffs LFP={LOWER_VOLTAGE_CUTOFF['LFP']}V/NMC={LOWER_VOLTAGE_CUTOFF['NMC']}V, "
+print(f"Starting FULL continuous-discharge simulations from Initial_SOC={INITIAL_SOC_FULL} "
+      f"(SOH sampled {SOH_MIN}-{SOH_MAX} per battery, C-rate {C_RATE_MIN}-{C_RATE_MAX}, "
+      f"cutoffs LFP={LOWER_VOLTAGE_CUTOFF['LFP']}V/NMC={LOWER_VOLTAGE_CUTOFF['NMC']}V, "
       f"NMC parameter sets {NMC_PARAMETER_SETS} (Mohtat2020 dropped) with diffusivity/{DIFFUSIVITY_FACTOR}, "
-      f"LFP OCP tail rate constant softened to {LFP_OCP_RATE_CONSTANT})...")
+      f"LFP OCP tail rate constant softened to {LFP_OCP_RATE_CONSTANT}), "
+      f"then truncating each to {SOC_TRUNCATION_POINTS}...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
-        soc = random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX)
         soh = random.uniform(SOH_MIN, SOH_MAX)
         c_rate = random.uniform(C_RATE_MIN, C_RATE_MAX)
 
@@ -247,7 +270,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         nmc_set_name = random.choice(NMC_PARAMETER_SETS)
 
         print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | "
-              f"C-rate: {c_rate:.3f} | SOC: {soc:.2f} | SOH: {soh:.3f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
+              f"C-rate: {c_rate:.3f} | SOH: {soh:.3f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
 
         param_lfp = param_lfp_base.copy()
         param_lfp = apply_lfp_ocp_fix(param_lfp, LFP_OCP_RATE_CONSTANT)
@@ -285,7 +308,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
 
             print(f"Solving {chem} (I={current_a:.4f} A / {c_rate:.3f}C, Vmin={v_min} V, dense t_interp output)...")
             context = f" [target={target_ah}Ah, variation={i+1}/{variations_per_size}, SOH={soh:.3f}, C-rate={c_rate:.3f}]"
-            dense = solve_dense(param, discharge_experiment, soc, chem, context=context)
+            dense = solve_dense(param, discharge_experiment, INITIAL_SOC_FULL, chem, context=context)
             if dense is None:
                 print(f"  Skipping {chem}: no solution data.")
                 continue
@@ -295,29 +318,46 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             noise = np.random.normal(0, 0.001, len(raw_voltage))
             voltage_with_noise = raw_voltage + noise
 
-            df = pd.DataFrame({
-                "Time [s]": time_arr,
-                "Voltage [V]": voltage_with_noise,
-                "Capacity [A.h]": capacity_arr,
+            full_traces_for_plot.append(pd.DataFrame({
+                "Time [s]": time_arr, "Voltage [V]": voltage_with_noise,
+                "Chemistry": chem, "Variation_ID": variation_id,
+            }))
+
+            base_row = {
                 "Chemistry": chem,
                 "Target_Capacity_Ah": target_ah,
                 "C_Rate": round(c_rate, 4),
                 "Size_Multiplier": capacity_multipliers[chem][size_idx],
                 "SOH": round(soh, 3),
-                "Initial_SOC": round(soc, 3),
                 "Ambient_Temperature_C": round(ambient_c, 2),
                 "Resistance_Factor": round(resistance_factors[chem], 4),
                 "Base_Parameter_Set": nmc_set_name if chem == "NMC" else "Prada2013",
                 "V_min [V]": v_min,
-                "Variation_ID": variation_id,
-            })
-            all_data.append(df)
+            }
+
+            for s in SOC_TRUNCATION_POINTS:
+                truncated = truncate_at_soc(time_arr, voltage_with_noise, capacity_arr, s)
+                if truncated is None:
+                    print(f"  {chem} Initial_SOC={s}: too few points after truncation, skipped.")
+                    continue
+                t_trunc, v_trunc, cap_trunc = truncated
+                df = pd.DataFrame({
+                    "Time [s]": t_trunc,
+                    "Voltage [V]": v_trunc,
+                    "Capacity [A.h]": cap_trunc,
+                    "Initial_SOC": s,
+                    "Variation_ID": f"{variation_id}_soc_{s}",
+                    **base_row,
+                })
+                all_data.append(df)
 
 # Combine and save
 if all_data:
     training_data = pd.concat(all_data, ignore_index=True)
     training_data.to_csv(OUTPUT_DATA_CSV, index=False)
-    print(f"\nDone! SOH-range LFP-OCP-tuned + NMC-diffusivity-tuned data saved to '{OUTPUT_DATA_CSV}'")
+    print(f"\nDone! Continuous-discharge-truncated data saved to '{OUTPUT_DATA_CSV}'")
+    print(f"  {training_data['Variation_ID'].nunique()} battery/SOC-point rows "
+          f"from {training_data.groupby('Chemistry')['Variation_ID'].apply(lambda s: s.str.split('_soc_').str[0].nunique()).to_dict()} base full-discharge traces per chemistry")
 else:
     training_data = pd.DataFrame()
     print("\nNo data generated: every solve attempt failed.")
@@ -331,12 +371,13 @@ if FAILURE_LOG:
     failures_df.to_csv(FAILURE_LOG_CSV, index=False)
     print(f"Full failure log saved to '{FAILURE_LOG_CSV}'")
 
-# --- PLOTTING ---
-if not training_data.empty:
-    print("Generating continuous discharge plot...")
+# --- PLOTTING (full pre-truncation traces, not every truncated variant -- would be highly redundant) ---
+if full_traces_for_plot:
+    print("Generating continuous discharge plot (full traces, pre-truncation)...")
+    plot_df = pd.concat(full_traces_for_plot, ignore_index=True)
     plt.figure(figsize=(12, 6))
     lfp_labeled, nmc_labeled = False, False
-    for (chem, var_id), run_df in training_data.groupby(["Chemistry", "Variation_ID"]):
+    for (chem, var_id), run_df in plot_df.groupby(["Chemistry", "Variation_ID"]):
         color = '#1f77b4' if chem == "LFP" else '#ff7f0e'
         label = None
         if chem == "LFP" and not lfp_labeled:
@@ -345,7 +386,8 @@ if not training_data.empty:
             label, nmc_labeled = "NMC", True
         plt.plot(run_df['Time [s]'] / 3600, run_df['Voltage [V]'], color=color, alpha=0.15, linewidth=0.8, label=label)
 
-    plt.title(f'Simulated Discharge Profiles (SOH {SOH_MIN}-{SOH_MAX}, NMC diffusivity/{DIFFUSIVITY_FACTOR}, LFP OCP rate={LFP_OCP_RATE_CONSTANT})')
+    plt.title(f'Full Discharge Profiles Pre-Truncation (SOH {SOH_MIN}-{SOH_MAX}, NMC diffusivity/{DIFFUSIVITY_FACTOR}, '
+              f'LFP OCP rate={LFP_OCP_RATE_CONSTANT}, Initial_SOC={INITIAL_SOC_FULL})')
     plt.xlabel('Time [Hours]')
     plt.ylabel('Voltage [V]')
     plt.legend()

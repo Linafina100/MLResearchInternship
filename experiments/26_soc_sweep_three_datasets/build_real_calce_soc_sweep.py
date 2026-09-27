@@ -38,12 +38,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 EXP25_DIR = os.path.join(PROJECT_DIR, "experiments", "25_calce_sim_to_real")
 sys.path.insert(0, EXP25_DIR)
+sys.path.insert(0, SCRIPT_DIR)
 
 from build_calce_dataset import parse_calce_discharge_file
+from soc_truncation import truncate_at_soc
 
 CALCE_DIR = os.path.join(PROJECT_DIR, "data", "calce_experiment_data")
-MIN_RAW_POINTS_AFTER_TRUNCATION = 5
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
 CALCE_CONFIGS = [
     {"pattern": "*A1-*", "chem": "LFP", "nominal_ah": 1.1},
@@ -53,31 +54,8 @@ CALCE_CONFIGS = [
 RUN_LABEL = os.environ.get("RUN_LABEL", "26_real_calce_soc_sweep")
 OUT_RAW_CSV = os.path.join(PROJECT_DIR, "data", RUN_LABEL, "raw", "real_calce_soc_sweep_raw.csv")
 
-
-def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
-    """Same technique as experiment 23's build script -- see that file's
-    docstring."""
-    total_capacity = cap_ah[-1]
-    cap_threshold = (1.0 - soc_start) * total_capacity
-
-    if cap_threshold <= 0:
-        t_kept, v_kept, cap_kept = t_s, voltage, cap_ah
-    else:
-        t_at_thresh = np.interp(cap_threshold, cap_ah, t_s)
-        v_at_thresh = np.interp(cap_threshold, cap_ah, voltage)
-        mask = cap_ah > cap_threshold
-        if mask.sum() < MIN_RAW_POINTS_AFTER_TRUNCATION - 1:
-            return None
-        t_kept = np.concatenate([[t_at_thresh], t_s[mask]])
-        v_kept = np.concatenate([[v_at_thresh], voltage[mask]])
-        cap_kept = np.concatenate([[cap_threshold], cap_ah[mask]])
-        t_kept = t_kept - t_kept[0]
-        cap_kept = cap_kept - cap_kept[0]
-
-    if len(t_kept) < MIN_RAW_POINTS_AFTER_TRUNCATION:
-        return None
-
-    return t_kept, v_kept, cap_kept
+# truncate_at_soc() moved to soc_truncation.py (was identical across
+# three build scripts; see that file's docstring).
 
 
 def main():

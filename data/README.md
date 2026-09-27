@@ -24,6 +24,7 @@ each folder's actual generating code, not guessed from the name.
 | `26_real_exp07_soc_sweep` | `experiments/26_soc_sweep_three_datasets/build_real_exp07_soc_sweep.py` |
 | `26_real_empa_soc_sweep_soh_range` | `experiments/26_soc_sweep_three_datasets/build_real_empa_soc_sweep_soh_range.py` |
 | `26_real_calce_soc_sweep` | `experiments/26_soc_sweep_three_datasets/build_real_calce_soc_sweep.py` |
+| `26_soh_range_continuous_discharge_truncated_v1` | `experiments/26_soc_sweep_three_datasets/simulate_batteries_continuous_discharge_truncated.py` -- validation-only synthetic data (continuous-discharge-then-truncate, matches continuously-cycled lab datasets); NOT the production methodology, see that experiment's RESULTS.md for the rested-vs-continuous distinction |
 | `archive/soh_0.8_fixed_v1.5` | orphaned -- likely a pre-consolidation exp20 Part A/B intermediate; its generating script was deleted when experiments 20/21 were consolidated. Nothing references it; safe to delete entirely if disk space is needed. |
 
 **Not experiment-specific, left unnumbered:**

@@ -47,43 +47,19 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 EXP07_DIR = os.path.join(PROJECT_DIR, "experiments", "07_real_lfp_nmc_test")
 sys.path.insert(0, EXP07_DIR)
+sys.path.insert(0, SCRIPT_DIR)
 
 from parse_real_lfp import parse_lfp_discharge_files
 from parse_real_nmc import parse_nmc_files
+from soc_truncation import truncate_at_soc, MIN_RAW_POINTS_AFTER_TRUNCATION
 
-MIN_RAW_POINTS_AFTER_TRUNCATION = 5
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
 RUN_LABEL = os.environ.get("RUN_LABEL", "26_real_exp07_soc_sweep")
 OUT_RAW_CSV = os.path.join(PROJECT_DIR, "data", RUN_LABEL, "raw", "real_exp07_soc_sweep_raw.csv")
 
-
-def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
-    """Same technique as experiment 23's build script (see that file's
-    docstring) -- keeps the portion of a full real discharge trace after
-    (1 - soc_start) of THIS cycle's own realized capacity has already
-    been delivered, resetting Time/Capacity to 0 at the new start."""
-    total_capacity = cap_ah[-1]
-    cap_threshold = (1.0 - soc_start) * total_capacity
-
-    if cap_threshold <= 0:
-        t_kept, v_kept, cap_kept = t_s, voltage, cap_ah
-    else:
-        t_at_thresh = np.interp(cap_threshold, cap_ah, t_s)
-        v_at_thresh = np.interp(cap_threshold, cap_ah, voltage)
-        mask = cap_ah > cap_threshold
-        if mask.sum() < MIN_RAW_POINTS_AFTER_TRUNCATION - 1:
-            return None
-        t_kept = np.concatenate([[t_at_thresh], t_s[mask]])
-        v_kept = np.concatenate([[v_at_thresh], voltage[mask]])
-        cap_kept = np.concatenate([[cap_threshold], cap_ah[mask]])
-        t_kept = t_kept - t_kept[0]
-        cap_kept = cap_kept - cap_kept[0]
-
-    if len(t_kept) < MIN_RAW_POINTS_AFTER_TRUNCATION:
-        return None
-
-    return t_kept, v_kept, cap_kept
+# truncate_at_soc() moved to soc_truncation.py (was identical across
+# three build scripts; see that file's docstring).
 
 
 def sweep_one_chemistry(df, chemistry):

@@ -57,9 +57,9 @@ sys.path.insert(0, PROJECT_DIR)
 
 from feature_engineering import create_features_by_voltage_bins
 
-SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "24_soh_range_0.8_1.0_v1.5", "raw", "advanced_synthetic_battery_data.csv")
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "26_soh_range_continuous_discharge_truncated_v1", "raw", "advanced_synthetic_battery_data.csv")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 EXTRAPOLATION_POINTS = {0.4, 0.3}
 
 DATASETS = {

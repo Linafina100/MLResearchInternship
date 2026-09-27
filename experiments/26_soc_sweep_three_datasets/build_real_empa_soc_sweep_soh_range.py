@@ -25,6 +25,7 @@ Usage: python3 experiments/26_soc_sweep_three_datasets/build_real_empa_soc_sweep
 import glob
 import json
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -32,6 +33,9 @@ import pandas as pd
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 ROCRATE_DIR = os.path.join(PROJECT_DIR, "data", "Dataset-rocrate")
+sys.path.insert(0, SCRIPT_DIR)
+
+from soc_truncation import truncate_at_soc
 
 SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
 SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))
@@ -44,9 +48,8 @@ MAX_SEGMENT_DURATION_HOURS = 24.0
 MIN_VOLTAGE_SPAN_V = 0.3
 RESCALE_TARGET_AH = 2.0
 N_RESAMPLE_POINTS = 80
-MIN_RAW_POINTS_AFTER_TRUNCATION = 5
 
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
 ACTIVE_MATERIAL_TO_CHEMISTRY = {
     "LithiumIronPhosphateOxide": "LFP",
@@ -101,33 +104,8 @@ def resample_on_capacity(t_s, voltage, cap_ah, n_points=N_RESAMPLE_POINTS):
     return t_resampled, v_resampled, cap_grid
 
 
-def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
-    """Keeps only the portion of a full real discharge trace occurring
-    after (1 - soc_start) of THIS cycle's own realized capacity has
-    already been delivered. Unlike experiment 23's version, does NOT
-    discard a variant for failing to reach any specific voltage zone --
-    this experiment uses all voltage bins, not a hand-picked target zone."""
-    total_capacity = cap_ah[-1]
-    cap_threshold = (1.0 - soc_start) * total_capacity
-
-    if cap_threshold <= 0:
-        t_kept, v_kept, cap_kept = t_s, voltage, cap_ah
-    else:
-        t_at_thresh = np.interp(cap_threshold, cap_ah, t_s)
-        v_at_thresh = np.interp(cap_threshold, cap_ah, voltage)
-        mask = cap_ah > cap_threshold
-        if mask.sum() < MIN_RAW_POINTS_AFTER_TRUNCATION - 1:
-            return None
-        t_kept = np.concatenate([[t_at_thresh], t_s[mask]])
-        v_kept = np.concatenate([[v_at_thresh], voltage[mask]])
-        cap_kept = np.concatenate([[cap_threshold], cap_ah[mask]])
-        t_kept = t_kept - t_kept[0]
-        cap_kept = cap_kept - cap_kept[0]
-
-    if len(t_kept) < MIN_RAW_POINTS_AFTER_TRUNCATION:
-        return None
-
-    return t_kept, v_kept, cap_kept
+# truncate_at_soc() moved to soc_truncation.py (was identical across
+# three build scripts; see that file's docstring).
 
 
 def process_cell(cell_dir):
