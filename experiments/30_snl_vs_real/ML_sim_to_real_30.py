@@ -35,15 +35,15 @@ SNL_NMC_DIR = Path(
 )
 
 # Output paths for merged data and features
-DATA_OUTPUT_DIR = Path(PROJECT_DIR) / "data" / "24_SNL_Real"
+DATA_OUTPUT_DIR = Path(PROJECT_DIR) / "data" / "30_SNL_Real"
 DATA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SYNTHETIC_RAW_CSV = (
     Path(PROJECT_DIR)
     / "data"
-    / "24_SNL_1"
+    / "30_SNL_1"
     / "raw"
-    / "synthetic_battery_data_24.csv"
+    / "synthetic_battery_data_30.csv"
 )
 REAL_RAW_CSV = DATA_OUTPUT_DIR / "real_snl_combined_raw.csv"
 RAW_CSV = Path(SCRIPT_DIR) / "sim_and_real_raw.csv"

@@ -26,6 +26,8 @@ each folder's actual generating code, not guessed from the name.
 | `26_real_calce_soc_sweep` | `experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/build_real_calce_soc_sweep.py` |
 | `26_soh_range_continuous_discharge_truncated_v1` | `experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/simulate_batteries_continuous_discharge_truncated.py` -- validation-only synthetic data (continuous-discharge-then-truncate, matches continuously-cycled lab datasets); NOT the production methodology, see that experiment's RESULTS.md for the rested-vs-continuous distinction |
 | `27_real_snl_soc_sweep` | `experiments/22_29_sim_to_real_validation/27_snl_soc_sweep/build_real_snl_soc_sweep.py` -- SNL (Sandia National Labs) 18650 LFP/NMC cells, SOH-filtered and subsampled; see that experiment's RESULTS.md for two SNL-specific data-quality fixes (doubled-capacity BOL artifact, fixed-time-sampling knee resolution) |
+| `30_SNL_1` | `experiments/30_snl_vs_real/simulate_batteries_30.py` |
+| `30_SNL_Real` | `experiments/30_snl_vs_real/Make_SNL_dataset_30.py` |
 | `archive/soh_0.8_fixed_v1.5` | orphaned -- likely a pre-consolidation exp20 Part A/B intermediate; its generating script was deleted when experiments 20/21 were consolidated. Nothing references it; safe to delete entirely if disk space is needed. |
 
 **Not experiment-specific, left unnumbered:**

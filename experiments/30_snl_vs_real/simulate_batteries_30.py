@@ -57,12 +57,12 @@ DIFFUSIVITY_FACTOR = float(os.environ.get("DIFFUSIVITY_FACTOR", 10))
 LFP_OCP_RATE_CONSTANT = float(os.environ.get("LFP_OCP_RATE_CONSTANT", -3))
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
-RUN_LABEL = os.environ.get("RUN_LABEL", "24_SNL_1")
+RUN_LABEL = os.environ.get("RUN_LABEL", "30_SNL_1")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
-OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "synthetic_battery_data_24.csv"))
-FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", os.path.join(RUN_DIR, "failures", "simulation_failures_24.csv"))
-DISCHARGE_PLOT_PNG = os.environ.get("DISCHARGE_PLOT_PNG", os.path.join(RUN_DIR, "plots", "continuous_discharge_plot_24.png"))
+OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "synthetic_battery_data_30.csv"))
+FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", os.path.join(RUN_DIR, "failures", "simulation_failures_30.csv"))
+DISCHARGE_PLOT_PNG = os.environ.get("DISCHARGE_PLOT_PNG", os.path.join(RUN_DIR, "plots", "continuous_discharge_plot_30.png"))
 
 for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG):
     os.makedirs(os.path.dirname(_output_path), exist_ok=True)
