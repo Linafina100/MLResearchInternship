@@ -12,12 +12,22 @@ each folder's actual generating code, not guessed from the name.
 | `04_pulse_variable_soc_0.1-0.4` (+3) | `experiments/04_pulse_variable_discharge_soc_sweep/sweep_pulse_variable_discharge.py` |
 | `06_const_random_soc_0.1-0.4` (+3) | `experiments/06_cont_random_discharge_soc_sweep/sweep_const_discharge_random.py` |
 | `11_cutoff_original`, `11_cutoff_lower` (+2 low-SOC variants) | `experiments/11_voltage_cutoff_comparison/compare_voltage_cutoffs.py` |
-| `16_low_voltage_v1.5` | one-off run of root `simulate_batteries.py` with `LFP_LOWER_CUTOFF`/`NMC_LOWER_CUTOFF`/`RUN_LABEL` overridden for `experiments/16_low_voltage_only_sim_to_real/` |
+| `16_low_voltage_v1.5` | producing experiment (`16_low_voltage_only_sim_to_real`) removed in the experiments/ cleanup that consolidated 15-16/20-21/22-29 -- see git history for the original script if ever needed. Folder kept for local traceability only. |
 | `17_high_soh_low_crate_v1.5` | `experiments/17_high_soh_low_crate_sim_to_real/simulate_batteries_high_soh_low_crate.py` |
-| `20_soh_0.8_diffusivity_tuned_v1.5` | `experiments/20_nmc_diffusivity_tuning/simulate_batteries_diffusivity_tuned.py` |
-| `21_soh_0.8_lfp_ocp_tuned_v1.5` | `experiments/21_lfp_diffusivity_tuning/simulate_batteries_lfp_ocp_tuned.py` (still reused directly by experiments 22/23, no resimulation) |
-| `22_real_empa_soh_0.8` | `experiments/22_empa_rocrate_sim_to_real/build_real_empa_dataset.py` |
-| `23_real_empa_soc_sweep` | `experiments/23_empa_soc_sweep/build_real_empa_soc_sweep_dataset.py` |
+| `20_soh_0.8_diffusivity_tuned_v1.5` | `experiments/20_21_diffusivity_ocp_tuning/20_nmc_diffusivity_tuning/simulate_batteries_diffusivity_tuned.py` |
+| `21_soh_0.8_lfp_ocp_tuned_v1.5` | `experiments/20_21_diffusivity_ocp_tuning/21_lfp_diffusivity_tuning/simulate_batteries_lfp_ocp_tuned.py` (still reused directly by experiments 22/23, no resimulation) |
+| `22_real_empa_soh_0.8` | `experiments/22_29_sim_to_real_validation/22_empa_rocrate_sim_to_real/build_real_empa_dataset.py` |
+| `23_real_empa_soc_sweep` | `experiments/22_29_sim_to_real_validation/23_empa_soc_sweep/build_real_empa_soc_sweep_dataset.py` |
+| `24_soh_range_0.8_1.0_v1.5` | `experiments/22_29_sim_to_real_validation/24_soh_range_0.8_1.0_sim_to_real/simulate_batteries_soh_range.py` |
+| `24_real_empa_soh_0.8_1.0` | `experiments/22_29_sim_to_real_validation/24_soh_range_0.8_1.0_sim_to_real/build_real_empa_soh_range_dataset.py` |
+| `25_calce_real` | `experiments/22_29_sim_to_real_validation/25_calce_sim_to_real/build_calce_dataset.py` |
+| `26_real_exp07_soc_sweep` | `experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/build_real_exp07_soc_sweep.py` |
+| `26_real_empa_soc_sweep_soh_range` | `experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/build_real_empa_soc_sweep_soh_range.py` |
+| `26_real_calce_soc_sweep` | `experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/build_real_calce_soc_sweep.py` |
+| `26_soh_range_continuous_discharge_truncated_v1` | `experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/simulate_batteries_continuous_discharge_truncated.py` -- validation-only synthetic data (continuous-discharge-then-truncate, matches continuously-cycled lab datasets); NOT the production methodology, see that experiment's RESULTS.md for the rested-vs-continuous distinction |
+| `27_real_snl_soc_sweep` | `experiments/22_29_sim_to_real_validation/27_snl_soc_sweep/build_real_snl_soc_sweep.py` -- SNL (Sandia National Labs) 18650 LFP/NMC cells, SOH-filtered and subsampled; see that experiment's RESULTS.md for two SNL-specific data-quality fixes (doubled-capacity BOL artifact, fixed-time-sampling knee resolution) |
+| `30_SNL_1` | `experiments/30_snl_vs_real/simulate_batteries_30.py` |
+| `30_SNL_Real` | `experiments/30_snl_vs_real/Make_SNL_dataset_30.py` |
 | `archive/soh_0.8_fixed_v1.5` | orphaned -- likely a pre-consolidation exp20 Part A/B intermediate; its generating script was deleted when experiments 20/21 were consolidated. Nothing references it; safe to delete entirely if disk space is needed. |
 
 **Not experiment-specific, left unnumbered:**

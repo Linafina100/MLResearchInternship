@@ -1,0 +1,7 @@
+{
+  "python.analysis.extraPaths": [
+    "experiments/07_real_lfp_nmc_test",
+    "experiments/03_continuous_discharge_soc_sweep",
+    "experiments/08_pulse_protocol_archive"
+  ]
+}

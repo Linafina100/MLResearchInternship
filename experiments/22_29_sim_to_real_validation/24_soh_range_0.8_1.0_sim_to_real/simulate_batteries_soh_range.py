@@ -1,3 +1,36 @@
+"""
+Experiment 24: same validated fixes as experiment 21
+(simulate_batteries_lfp_ocp_tuned.py -- SOH-scaling, dense t_interp, NMC
+positive-particle diffusivity/10 on Chen2020+OKane2022, LFP OCP tail rate
+softened to -3), but with SOH sampled from a RANGE (default 0.8-1.0) per
+battery instead of held fixed at 0.8.
+
+Every prior sim-to-real result (experiments 20-23) calibrated and tested
+at a single SOH=0.8 point. This asks whether those fixes still hold across
+a healthier slice of a battery's life, not just the one point they were
+tuned against -- see RESULTS.md.
+
+Only change from experiment 21's script: SOH_FIXED -> SOH_MIN/SOH_MAX with
+soh = random.uniform(SOH_MIN, SOH_MAX) drawn per battery (mirrors the
+SOH_MIN/SOH_MAX pattern already used by root simulate_batteries.py).
+Diffusivity fix, OCP fix, C-rate range, cutoffs, capacity targets, variation
+count, t_interp splicing -- all identical to experiment 21.
+
+Usage: env vars DATA_DIR, RUN_LABEL, OUTPUT_DATA_CSV, FAILURE_LOG_CSV,
+DISCHARGE_PLOT_PNG, LFP_LOWER_CUTOFF, NMC_LOWER_CUTOFF, SOH_MIN, SOH_MAX,
+C_RATE_MIN/MAX, SOC_RANGE_MIN/MAX, DIFFUSIVITY_FACTOR, LFP_OCP_RATE_CONSTANT,
+VARIATIONS_PER_SIZE (all optional). VARIATIONS_PER_SIZE and the
+initial_soc-scaled T_INTERP_N_POINTS_FULL/T_INTERP_MIN_POINTS (see
+solve_dense) were both added for experiment 26's SOC=0.05 resimulation --
+widening SOC_RANGE_MIN downward, on its own, undersamples the
+higher-voltage bins (same battery count spread over a wider Initial_SOC
+range) AND, independently and more seriously, made the fixed 3000-point
+t_interp pass divide by near-zero dQ throughout a low-SOC battery's
+*entire* trace (not just a brief transient), since so little capacity
+remains to spread those points across -- see
+experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/RESULTS.md for both findings,
+confirmed directly against the raw data before each fix.
+"""
 import os
 import pybamm
 import pandas as pd
@@ -20,10 +53,10 @@ DIFFUSIVITY_FACTOR = float(os.environ.get("DIFFUSIVITY_FACTOR", 10))
 LFP_OCP_RATE_CONSTANT = float(os.environ.get("LFP_OCP_RATE_CONSTANT", -3))
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
-RUN_LABEL = os.environ.get("RUN_LABEL", "default")
+RUN_LABEL = os.environ.get("RUN_LABEL", "24_soh_range_0.8_1.0_v1.5")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
-OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "synthetic_battery_data.csv"))
+OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))
 FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", os.path.join(RUN_DIR, "failures", "simulation_failures.csv"))
 DISCHARGE_PLOT_PNG = os.environ.get("DISCHARGE_PLOT_PNG", os.path.join(RUN_DIR, "plots", "continuous_discharge_plot.png"))
 
@@ -33,7 +66,8 @@ for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG):
 model = pybamm.lithium_ion.SPM()
 
 param_lfp_base = pybamm.ParameterValues("Prada2013")
-# Mohtat2020 dropped: the diffusivity fix below doesn't fix its magnitude mismatch
+# Mohtat2020 dropped: experiment 20 Part C found diffusivity tuning
+# doesn't fix its magnitude mismatch at all, unlike Chen2020/OKane2022.
 NMC_PARAMETER_SETS = ["Chen2020", "OKane2022"]
 param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
 param_nmc_base = param_nmc_bases["Chen2020"]
@@ -59,12 +93,14 @@ def apply_nmc_diffusivity_fix(param, factor):
 
 
 def make_lfp_ocp(rate_constant):
-    """Afshar2017's LFP OCP fit in Prada2013 with the tail rate constant (-30
-    originally) replaced -- empirical calibration, not physics."""
+    """Same functional form as Afshar2017's LFP_ocp_Afshar2017, with the
+    tail rate constant (-30 originally) replaced by `rate_constant`. An
+    explicit empirical calibration -- see experiment 21's docstring."""
     def lfp_ocp_softened(sto):
         c1 = -150 * sto
         c2 = rate_constant * (1 - sto)
-        return 3.4077 - 0.020269 * sto + 0.5 * np.exp(c1) - 0.9 * np.exp(c2)
+        k = 3.4077 - 0.020269 * sto + 0.5 * np.exp(c1) - 0.9 * np.exp(c2)
+        return k
     return lfp_ocp_softened
 
 
@@ -113,14 +149,31 @@ def solve_with_cutoff(sim, initial_soc, chem, context=""):
     return sol
 
 
-T_INTERP_N_POINTS = 3000
-T_INTERP_SAFETY_FRACTION = 1 - 1e-6  # verified safe in experiments 18/20/21 -- do not widen
+T_INTERP_N_POINTS_FULL = 3000  # calibrated for a full-range (Initial_SOC~1.0) discharge
+T_INTERP_MIN_POINTS = 100  # floor so a very-low-SOC battery still gets enough points
+T_INTERP_SAFETY_FRACTION = 1 - 1e-6  # verified safe in experiments 18/20/21 -- do not widen this margin
 
 
 def solve_dense(param, discharge_experiment, initial_soc, chem, context=""):
-    """Solve twice and splice: once default (to get the true event-
-    terminated end time), once densely t_interp-sampled up to just before
-    it, for a smooth dV/dQ curve without losing the real final segment."""
+    """Solve twice and splice, as validated in experiments 18/20/21.
+
+    T_interp point count scales with `initial_soc` (experiment 26 fix):
+    a fixed 3000 points was calibrated assuming a battery discharges its
+    full usable capacity. A battery starting at, say, Initial_SOC=0.05
+    only has ~5% as much capacity left to discharge, so spreading the
+    same 3000 points across that much smaller capacity range made each
+    t_interp step's dQ tiny enough that ordinary solver-precision noise
+    in voltage got divided into wild, non-physical dV/dQ swings
+    *throughout the entire trace* -- not a brief settling transient, and
+    not fixed by adding more battery variations (both confirmed directly
+    against real data this experiment; see
+    experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/RESULTS.md). Scaling point
+    count with initial_soc keeps each step's dQ magnitude comparable to
+    what a full-range discharge produces, regardless of how little
+    capacity a given battery starts with.
+    """
+    n_points = max(T_INTERP_MIN_POINTS, round(T_INTERP_N_POINTS_FULL * initial_soc))
+
     sim1 = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
     sol1 = solve_with_cutoff(sim1, initial_soc, chem, context=context)
     if sol1 is None:
@@ -137,7 +190,7 @@ def solve_dense(param, discharge_experiment, initial_soc, chem, context=""):
 
     try:
         sim2 = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
-        t_interp = np.linspace(0, t_bound, T_INTERP_N_POINTS)
+        t_interp = np.linspace(0, t_bound, n_points)
         sol2 = sim2.solve(initial_soc=initial_soc, t_interp=t_interp)
     except Exception as err:
         print(f"  {chem}{context}: t_interp dense pass failed ({type(err).__name__}: {err}) -- "
@@ -161,8 +214,6 @@ CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
 
 
 def capacity_multipliers_for(base_params, targets_ah):
-    """Per-chemistry thickness multipliers that scale a base parameter set's
-    own nominal capacity onto each of the target capacities."""
     base_capacity_ah = base_params["Nominal cell capacity [A.h]"]
     return [target_ah / base_capacity_ah for target_ah in targets_ah]
 
@@ -176,10 +227,10 @@ variations_per_size = int(os.environ.get("VARIATIONS_PER_SIZE", 83))
 
 all_data = []
 
-print(f"Starting continuous-discharge simulations (SOH {SOH_MIN}-{SOH_MAX}, "
+print(f"Starting continuous-discharge simulations (SOH sampled {SOH_MIN}-{SOH_MAX} per battery, "
       f"C-rate {C_RATE_MIN}-{C_RATE_MAX}, cutoffs LFP={LOWER_VOLTAGE_CUTOFF['LFP']}V/NMC={LOWER_VOLTAGE_CUTOFF['NMC']}V, "
-      f"NMC parameter sets {NMC_PARAMETER_SETS} with diffusivity/{DIFFUSIVITY_FACTOR}, "
-      f"LFP OCP tail rate constant {LFP_OCP_RATE_CONSTANT})...")
+      f"NMC parameter sets {NMC_PARAMETER_SETS} (Mohtat2020 dropped) with diffusivity/{DIFFUSIVITY_FACTOR}, "
+      f"LFP OCP tail rate constant softened to {LFP_OCP_RATE_CONSTANT})...")
 
 for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
     for i in range(variations_per_size):
@@ -196,7 +247,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
         nmc_set_name = random.choice(NMC_PARAMETER_SETS)
 
         print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | "
-              f"C-rate: {c_rate:.3f} | SOC: {soc:.2f} | SOH: {soh:.2f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
+              f"C-rate: {c_rate:.3f} | SOC: {soc:.2f} | SOH: {soh:.3f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
 
         param_lfp = param_lfp_base.copy()
         param_lfp = apply_lfp_ocp_fix(param_lfp, LFP_OCP_RATE_CONSTANT)
@@ -214,8 +265,8 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
             param["Negative electrode thickness [m]"] *= mult
             param["Positive electrode thickness [m]"] *= mult
 
-            # Scale both Maximum and Initial concentration by SOH -- keeps
-            # stoichiometry invariant, avoids positive-electrode overflow.
+            # SOH-scaling fix (experiment 20 Part A): scale BOTH Maximum
+            # AND Initial concentration by the same factor.
             param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
             param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
             param["Initial concentration in negative electrode [mol.m-3]"] *= soh
@@ -240,8 +291,9 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
                 continue
             time_arr, voltage_arr, capacity_arr = dense
 
-            noise = np.random.normal(0, 0.001, len(voltage_arr))
-            voltage_with_noise = voltage_arr + noise
+            raw_voltage = voltage_arr
+            noise = np.random.normal(0, 0.001, len(raw_voltage))
+            voltage_with_noise = raw_voltage + noise
 
             df = pd.DataFrame({
                 "Time [s]": time_arr,
@@ -265,7 +317,7 @@ for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
 if all_data:
     training_data = pd.concat(all_data, ignore_index=True)
     training_data.to_csv(OUTPUT_DATA_CSV, index=False)
-    print(f"\nDone! Continuous-discharge data saved to '{OUTPUT_DATA_CSV}'")
+    print(f"\nDone! SOH-range LFP-OCP-tuned + NMC-diffusivity-tuned data saved to '{OUTPUT_DATA_CSV}'")
 else:
     training_data = pd.DataFrame()
     print("\nNo data generated: every solve attempt failed.")
@@ -280,8 +332,6 @@ if FAILURE_LOG:
     print(f"Full failure log saved to '{FAILURE_LOG_CSV}'")
 
 # --- PLOTTING ---
-# Overlay every run (not just the first LFP/NMC pair) so one failed early
-# solve can't crash plotting, and the plot shows the full spread.
 if not training_data.empty:
     print("Generating continuous discharge plot...")
     plt.figure(figsize=(12, 6))
@@ -295,7 +345,7 @@ if not training_data.empty:
             label, nmc_labeled = "NMC", True
         plt.plot(run_df['Time [s]'] / 3600, run_df['Voltage [V]'], color=color, alpha=0.15, linewidth=0.8, label=label)
 
-    plt.title('Simulated Continuous Discharge Profiles')
+    plt.title(f'Simulated Discharge Profiles (SOH {SOH_MIN}-{SOH_MAX}, NMC diffusivity/{DIFFUSIVITY_FACTOR}, LFP OCP rate={LFP_OCP_RATE_CONSTANT})')
     plt.xlabel('Time [Hours]')
     plt.ylabel('Voltage [V]')
     plt.legend()

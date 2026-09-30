@@ -16,7 +16,7 @@ SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.05))
 SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
-RUN_LABEL = os.environ.get("RUN_LABEL", "continuous_discharge")
+RUN_LABEL = os.environ.get("RUN_LABEL", "continuous_discharge_18")
 RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
 
 OUTPUT_DATA_CSV = os.environ.get(
@@ -44,11 +44,13 @@ param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_
 param_nmc_base = param_nmc_bases["Chen2020"]
 
 LOWER_VOLTAGE_CUTOFF = {
-    "LFP": 1.5,
-    "NMC": 1.8,
+    "LFP": 2.0,
+    "NMC": 2.2,
 }
 
-CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
+#CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5,5.0]
+
+CAPACITY_TARGETS_AH = [2.0, 3.5, 5.0]
 
 def capacity_multipliers_for(base_params, targets_ah):
     base_capacity_ah = base_params["Nominal cell capacity [A.h]"]
