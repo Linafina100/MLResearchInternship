@@ -27,12 +27,8 @@ from ml_pipeline import run_ml_pipeline
 # Directories and Paths
 # --------------------------------------------------------------------------
 # Paths to your raw Sandia datasets
-SNL_LFP_DIR = Path(
-    r"C:\Users\hilda\OneDrive\Skrivbord\forskningapraktik\MLResearchInternship\data\SNL LFP"
-)
-SNL_NMC_DIR = Path(
-    r"C:\Users\hilda\OneDrive\Skrivbord\forskningapraktik\MLResearchInternship\data\SNL NMC"
-)
+SNL_LFP_DIR = Path(PROJECT_DIR) / "DownloadedData" / "SNL data" / "SNL LFP"
+SNL_NMC_DIR = Path(PROJECT_DIR) / "DownloadedData" / "SNL data" / "SNL NMC"
 
 # Output paths for merged data and features
 DATA_OUTPUT_DIR = Path(PROJECT_DIR) / "data" / "30_SNL_Real"
