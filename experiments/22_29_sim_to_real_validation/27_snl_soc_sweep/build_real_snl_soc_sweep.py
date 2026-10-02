@@ -66,6 +66,21 @@ see experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/RESULTS
 rested-vs-continuous-discharge project memory for why this distinction
 matters.
 
+LEAD-IN ARTIFACT FIX (found via experiment 31's curve-comparison plots):
+a small number of cycles -- isolated to the 0.5-2C discharge protocol at
+35C in spot-checks, not a general problem -- had a single leftover sample
+from the END of the PREVIOUS cycle's discharge prepended to the START of
+the real discharge (SNL's equipment logs it under the next cycle's index
+at the discharge->charge->discharge boundary). That stray point sits at
+the low cutoff voltage with capacity reset to 0, creating a physically
+impossible "voltage rises for ~2 hours" segment once resampled -- and a
+spurious positive dV/dQ wherever it landed. `discharge_segments()` now
+splits on the resulting large time gap and keeps only the largest
+contiguous run. Checked against the real classification numbers before
+fixing: this artifact did not meaningfully affect reported accuracy
+either way (the affected cycles were mostly classified correctly anyway),
+but it produced physically nonsensical traces worth fixing regardless.
+
 Usage: python3 experiments/22_29_sim_to_real_validation/27_snl_soc_sweep/build_real_snl_soc_sweep.py
 """
 import glob
@@ -90,6 +105,18 @@ MIN_SEGMENT_POINTS = 15
 BOL_WINDOW_CYCLES = 10
 MAX_SEGMENT_DURATION_HOURS = 24.0
 MIN_VOLTAGE_SPAN_V = 0.3
+# SNL's equipment occasionally logs the last sample of a cycle's discharge
+# under the NEXT cycle's Cycle_Index (a boundary artifact at the
+# discharge->charge->discharge transition) -- found via experiment 31's
+# curve-comparison plots, which showed a handful of real traces with a
+# physically impossible rising-voltage segment at the very start. That
+# leftover sample sits at the low cutoff voltage with capacity reset to 0,
+# separated from the cycle's real discharge by the full intervening
+# charge/rest phase (observed gap: ~2 hours) -- far larger than any normal
+# within-discharge sampling gap (observed max: ~120-200s, even for the
+# sparsest-logged high-C-rate cycles). 1800s gives a >=9x safety margin
+# above normal sampling while staying far below the artifact's own gap.
+LEAD_IN_GAP_THRESHOLD_S = 1800.0
 MAX_CYCLES_PER_CELL = int(os.environ.get("MAX_CYCLES_PER_CELL", 20))
 N_RESAMPLE_POINTS = 80
 
@@ -117,6 +144,18 @@ def discharge_segments(df):
         if len(seg) < MIN_SEGMENT_POINTS:
             continue
         seg = seg.reset_index(drop=True)
+
+        # Drop a leftover leading (or trailing) fragment from a different
+        # physical event -- see LEAD_IN_GAP_THRESHOLD_S above. Split on any
+        # gap that large and keep only the single largest contiguous run,
+        # which is always the cycle's real, continuous discharge.
+        gaps = np.diff(seg["Test_Time (s)"].values)
+        if len(gaps) > 0 and gaps.max() > LEAD_IN_GAP_THRESHOLD_S:
+            split_points = np.where(gaps > LEAD_IN_GAP_THRESHOLD_S)[0] + 1
+            runs = np.split(np.arange(len(seg)), split_points)
+            seg = seg.iloc[max(runs, key=len)].reset_index(drop=True)
+            if len(seg) < MIN_SEGMENT_POINTS:
+                continue
 
         duration_hours = (seg["Test_Time (s)"].iloc[-1] - seg["Test_Time (s)"].iloc[0]) / 3600.0
         voltage_span = seg["Voltage (V)"].max() - seg["Voltage (V)"].min()
