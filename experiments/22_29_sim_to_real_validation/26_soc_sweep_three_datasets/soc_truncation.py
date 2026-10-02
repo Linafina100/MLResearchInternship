@@ -42,3 +42,30 @@ def truncate_at_soc(t_s, voltage, cap_ah, soc_start, min_raw_points=MIN_RAW_POIN
         return None
 
     return t_kept, v_kept, cap_kept
+
+
+def trim_to_cutoff_voltage(t_s, voltage, cap_ah, cutoff_voltage):
+    """Added for experiment 32: trims a full discharge trace so it ends
+    exactly where voltage first crosses down through `cutoff_voltage`,
+    interpolating the exact (time, voltage, capacity) at that crossing and
+    using it as the new final point. truncate_at_soc() always treats
+    whatever it's handed as cap_ah[-1] = "0% SOC" (the trace's own raw
+    stopping point) -- this lets a caller make "0% SOC" mean the SAME
+    physical voltage across cells/datasets/chemistries that natively stop
+    at different voltages, by trimming to that voltage BEFORE calling
+    truncate_at_soc(), instead of each cycle's own raw stopping point.
+    Returns None if the trace never reaches cutoff_voltage (an
+    incomplete/shallow cycle with no basis to locate it there), or if it
+    starts at or below cutoff_voltage (not a real full discharge)."""
+    below = np.where(voltage <= cutoff_voltage)[0]
+    if len(below) == 0 or below[0] == 0:
+        return None
+    i = below[0]
+    v0, v1 = voltage[i - 1], voltage[i]
+    frac = 0.0 if v0 == v1 else (v0 - cutoff_voltage) / (v0 - v1)
+    t_cut = t_s[i - 1] + frac * (t_s[i] - t_s[i - 1])
+    cap_cut = cap_ah[i - 1] + frac * (cap_ah[i] - cap_ah[i - 1])
+    t_kept = np.concatenate([t_s[:i], [t_cut]])
+    v_kept = np.concatenate([voltage[:i], [cutoff_voltage]])
+    cap_kept = np.concatenate([cap_ah[:i], [cap_cut]])
+    return t_kept, v_kept, cap_kept
