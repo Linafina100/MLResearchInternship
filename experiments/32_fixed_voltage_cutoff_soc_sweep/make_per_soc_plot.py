@@ -1,11 +1,13 @@
 """
-Experiment 32 (rebuilt): plots per-SOC-specialized Random Forest balanced
-accuracy vs. Initial_SOC for exp07, EMPA, and SNL -- natural end-of-
-discharge cutoff, no forced voltage floor. Reads
-evaluate_per_soc_point_models.py's saved per_soc_results.json (run that
-first). Legend entries include each dataset's total unique physical
-cells and total discharge cycles (pooled across all 12 Initial_SOC
-points).
+Experiment 32 (rebuilt, with the negative-electrode-balance fix): plots
+per-SOC-specialized Random Forest balanced accuracy vs. Initial_SOC for
+exp07, EMPA, and SNL -- natural end-of-discharge cutoff, no forced
+voltage floor, LFP's negative-electrode capacity rebalanced (factor=0.7)
+to fix a real dV/dQ shape mismatch against real EMPA LFP cells (see
+RESULTS.md). Reads evaluate_per_soc_point_models.py's saved
+per_soc_results.json (run that first). Legend entries include each
+dataset's total unique physical cells and total discharge cycles (pooled
+across all 12 Initial_SOC points).
 
 Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/make_per_soc_plot.py
 Output: experiments/32_fixed_voltage_cutoff_soc_sweep/plots/per_soc_accuracy.png
@@ -55,7 +57,7 @@ def main():
     ax.set_xlabel("Initial SOC (fraction of the cell's own capacity remaining at test time, natural cutoff)")
     ax.set_ylabel("Balanced accuracy (%)")
     ax.set_title("Per-SOC-specialized Random Forest balanced accuracy vs. starting charge level\n"
-                 "(natural end-of-discharge cutoff, one model per Initial_SOC point -- exp07 / EMPA / SNL)")
+                 "(natural cutoff + LFP negative-electrode balance fix -- exp07 / EMPA / SNL)")
     ax.set_xlim(1.05, 0.0)
     ax.set_ylim(0, 105)
     ax.grid(True, alpha=0.3)

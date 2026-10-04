@@ -1,35 +1,57 @@
 """
-Experiment 32 (rebuilt): per-SOC-point specialized Random Forest models
-for exp07, EMPA, and SNL (CALCE dropped, not requested), with a NATURAL
-end-of-discharge cutoff -- no artificial fixed voltage floor.
+Experiment 32 (rebuilt, now with the negative-electrode-balance fix):
+per-SOC-point specialized Random Forest models for exp07, EMPA, and SNL
+(CALCE dropped, not requested), with a NATURAL end-of-discharge cutoff --
+no artificial fixed voltage floor -- and LFP's negative-electrode
+capacity rebalanced to fix a real dV/dQ shape mismatch.
 
-HOW THIS EXPERIMENT GOT HERE: an earlier version of this experiment
-forced a single universal voltage cutoff (2.5V, EMPA's own observed
-stopping point) onto every dataset's real data AND the synthetic
-generator, training ONE pooled model (across all 12 Initial_SOC points)
-per dataset. That forced coverage into deep bins (like 2.6-2.5V) that
-real LFP cells don't naturally reach, and a side-by-side comparison
-against experiments 23/24 (97-99% balanced accuracy on EMPA) traced the
-real gap to something else entirely: pooling all 12 Initial_SOC
-truncation points into ONE training set measurably blurs the model's
-sensitivity to bins that a heavily-truncated low-SOC synthetic example
-has no data in at all -- confirmed directly by retraining on ONLY the
-Initial_SOC=1.0 synthetic slice, which exactly reproduced experiment 24's
-99.14% on the identical real data. This is exactly what experiment 28
-already found and fixed (per-SOC-point specialized models, not one
-pooled model) -- so this version of experiment 32 extends experiment 28's
-fix to all three datasets, with the fixed-cutoff idea dropped entirely.
+HOW THIS EXPERIMENT GOT HERE, IN THREE STAGES:
+1. An earlier version forced a single universal voltage cutoff (2.5V,
+   EMPA's own observed stopping point) onto every dataset's real data AND
+   the synthetic generator, training ONE pooled model (across all 12
+   Initial_SOC points) per dataset. That forced coverage into deep bins
+   (like 2.6-2.5V) real LFP cells don't naturally reach. A side-by-side
+   comparison against experiments 23/24 (97-99% balanced accuracy on
+   EMPA) traced the real gap to something else: pooling all 12
+   Initial_SOC points into ONE training set measurably blurs the model's
+   sensitivity to bins a heavily-truncated low-SOC synthetic example has
+   no data in -- confirmed directly by retraining on ONLY the
+   Initial_SOC=1.0 synthetic slice, which exactly reproduced experiment
+   24's 99.14% on identical real data. This is exactly what experiment 28
+   already found and fixed (per-SOC-point specialized models, not one
+   pooled model) -- so this script extends that fix to all three
+   datasets, with the fixed-cutoff idea dropped.
+2. Per-SOC specialization alone still left a sharp cliff for EMPA below
+   Initial_SOC=0.5 (49-53% balanced accuracy at 0.4 and below). Traced to
+   a genuine physics mismatch, not a methodology problem: real EMPA LFP's
+   steep dV/dQ dive happens by ~2.65V, but the synthetic calibration's
+   equivalent steepness only appears near 2.3-2.5V -- a region real EMPA
+   cells never reach (they stop at ~2.5V). Confirmed directly by
+   comparing full-range (no coverage filter) median dV/dQ per bin,
+   synthetic vs. real EMPA LFP, Initial_SOC=1.0.
+3. THE FIX: `simulate_lfp_negative_electrode_balance.py` scales LFP's
+   negative-electrode capacity down (factor=0.7, independent of the
+   positive electrode's own scaling) -- a lever distinct from both
+   already-ruled-out LFP-side levers
+   ([[exp29_lfp_ocp_tail_ceiling]], [[exp29_negative_electrode_diffusivity_fix]]).
+   `diagnose_empa_negative_electrode_balance.py` found this shifts the
+   dive to ~2.67V (full-bin-range checked, no runaway side effect, unlike
+   the diffusivity dead end), and this script's own evaluation (below)
+   confirms it survives the real test: EMPA's Initial_SOC=0.4/0.3
+   buckets jump from ~50% to ~99% balanced accuracy. NMC is untouched by
+   this fix -- `combine_lfp_fix_with_baseline_nmc.py` reuses the
+   existing baseline NMC rows unchanged.
 
-NO REBUILD NEEDED: reuses the exact same already-built, UNMODIFIED
-natural-cutoff datasets experiments 26-28 use --
-- Synthetic: data/26_soh_range_continuous_discharge_truncated_v1/ (each
-  chemistry's own natural 1.5V solver cutoff, SOH 0.8-1.0 range)
+DATA SOURCES:
+- Synthetic: data/32_synthetic_lfp_balance_fix_combined/ (LFP: negative-
+  electrode-balance-fixed, 1.5V natural solver cutoff, SOH 0.8-1.0 range;
+  NMC: identical to data/26_soh_range_continuous_discharge_truncated_v1/,
+  untouched)
 - exp07: data/26_real_exp07_soc_sweep/ (each cycle's own raw stopping
-  point = 0% SOC)
-- EMPA: data/26_real_empa_soc_sweep_soh_range/ (same)
-- SNL: data/27_real_snl_soc_sweep/ (same, WITH the lead-in-artifact fix
-  from experiment 31 baked into the already-built CSV on disk -- that
-  fix is independent of this cutoff-definition question)
+  point = 0% SOC, unchanged)
+- EMPA: data/26_real_empa_soc_sweep_soh_range/ (unchanged)
+- SNL: data/27_real_snl_soc_sweep/ (unchanged, WITH the lead-in-artifact
+  fix from experiment 31 baked into the already-built CSV on disk)
 
 METHOD (identical to experiment 28's evaluate_per_soc_point_models.py,
 restricted to exp07/EMPA/SNL): for each dataset and each of the 12
@@ -62,7 +84,7 @@ sys.path.insert(0, PROJECT_DIR)
 
 from feature_engineering import create_features_by_voltage_bins
 
-SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "26_soh_range_continuous_discharge_truncated_v1", "raw", "advanced_synthetic_battery_data.csv")
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "32_synthetic_lfp_balance_fix_combined", "raw", "advanced_synthetic_battery_data.csv")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
