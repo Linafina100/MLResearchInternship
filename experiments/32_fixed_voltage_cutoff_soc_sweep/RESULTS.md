@@ -211,6 +211,42 @@ priority: EMPA is the largest dataset and the one this fix targeted, so
 this trade is accepted here, but it is a real trade, not a pure
 improvement -- stated plainly rather than only reporting the EMPA win.
 
+## Seeing it directly: the three datasets' real discharge behavior
+
+Everything above is numeric. Two plots make the same "one shared
+calibration can't fit all three" conclusion visible directly, real
+dataset against real dataset (no synthetic data in either plot).
+
+**Individual traces** (`plot_real_discharge_curves_comparison.py`):
+Voltage vs. Charge, one panel per chemistry, up to 150 real traces per
+dataset overlaid (low alpha):
+
+![Real discharge curves, individual traces](plots/real_discharge_curves_comparison.png)
+
+Different absolute capacities are immediately obvious (SNL LFP ~1Ah,
+EMPA ~2Ah, exp07 up to ~5.7Ah) and so are different plateau shapes
+(exp07's LFP plateau sits highest and longest; SNL's and EMPA's sit
+lower and end sooner).
+
+**Averaged** (`plot_average_discharge_curves.py`): one color per
+dataset, solid=LFP / dashed=NMC, averaged across ALL real traces (not
+subsampled) -- left panel is the same raw Voltage-vs-Charge view
+collapsed to one curve per (dataset, chemistry); right panel is the
+average dV/dQ vs. voltage, computed the same way the classifier's own
+features are built (point-to-point per trace, median per 0.1V bin --
+NOT a derivative of the smooth left-panel curve):
+
+![Average discharge curves and dV/dQ](plots/average_discharge_curves.png)
+
+The right panel is the more direct evidence: in the classifier's actual
+feature space, exp07's LFP curve (solid purple) crashes steeply around
+3.5-3.7V where EMPA's and SNL's stay flat; SNL's curves (green) swing
+sharply in the 2.6-2.8V range where the other two don't. (The dV/dQ
+y-axis is clipped to -20..5 -- a handful of sparse-coverage bins at the
+deepest edges spike to -130 to -275, a median of only a few real points
+that deep, the same artifact experiment 31 documented; clipping keeps
+the well-covered range readable instead of compressed into a thin band.)
+
 ## Files
 
 - `diagnose_empa_negative_electrode_balance.py` -- the full-bin-range
@@ -221,7 +257,10 @@ improvement -- stated plainly rather than only reporting the EMPA win.
   unchanged baseline NMC into `data/32_synthetic_lfp_balance_fix_combined/`.
 - `evaluate_per_soc_point_models.py` -- per-SOC-specialized evaluation,
   now pointed at the fixed combined synthetic set.
-- `make_per_soc_plot.py` -- the plot above.
+- `make_per_soc_plot.py` -- the per-SOC accuracy plot above.
+- `plot_real_discharge_curves_comparison.py`,
+  `plot_average_discharge_curves.py` -- the real-vs-real discharge-curve
+  plots above.
 - `simulate_batteries_extra_variations.py`, `combine_synthetic_data.py`
   -- from an earlier, called-off 10x-more-synthetic-data approach to
   exp07's high-SOC problem (abandoned in favor of the shape-mismatch
