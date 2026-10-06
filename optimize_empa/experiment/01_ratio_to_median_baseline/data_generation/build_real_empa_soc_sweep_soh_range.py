@@ -20,6 +20,15 @@ resample_on_capacity, the rest-phase/duration/voltage-span sanity filters,
 RESCALE_TARGET_AH) is unchanged from experiment 22/23 -- see
 experiments/22_29_sim_to_real_validation/22_empa_rocrate_sim_to_real/RESULTS.md for why each exists.
 
+optimize_empa, attempt 01 (copied in from
+experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/
+for self-containment -- see this folder's RESULTS.md): writes to this
+campaign's own data/optimize_empa_01_real_empa/ path instead of
+data/26_real_empa_soc_sweep_soh_range/. NOT invoked by run_evaluation.py
+-- kept here so the real data this script reads is itself reproducible
+from local files alone, without depending on another experiment's data
+path.
+
 Usage: python3 optimize_empa/experiment/01_ratio_to_median_baseline/data_generation/build_real_empa_soc_sweep_soh_range.py
 """
 import glob
@@ -56,7 +65,7 @@ ACTIVE_MATERIAL_TO_CHEMISTRY = {
     "LithiumNickelCobaltManganeseOxide": "NMC",
 }
 
-RUN_LABEL = os.environ.get("RUN_LABEL", "26_real_empa_soc_sweep_soh_range")
+RUN_LABEL = os.environ.get("RUN_LABEL", "optimize_empa_01_real_empa")
 OUT_RAW_CSV = os.path.join(PROJECT_DIR, "data", RUN_LABEL, "raw", "real_empa_soc_sweep_raw.csv")
 
 

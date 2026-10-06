@@ -26,16 +26,15 @@ build_real_empa_soc_sweep_soh_range.py, ml_pipeline.py, soc_truncation.py)
 -- none of those are invoked by this script; they're kept so the data
 this script reads is itself reproducible from local files alone.
 
-DATA SOURCES (synthetic copied to a new, campaign-specific path per
-this campaign's own convention; real data unchanged, still the ground-
-truth EMPA set every prior experiment used):
+DATA SOURCES (both copied to this campaign's own data/optimize_empa_01_...
+namespace, byte-for-byte, so this folder is runnable independently of
+any other experiment's data path):
 - Synthetic: data/optimize_empa_01_synthetic_baseline/ -- a byte-for-
   byte copy of data/32_synthetic_lfp_balance_fix_combined/ (negative-
   electrode-balance-fixed LFP, factor=0.7, + unchanged baseline NMC).
-  Copied, not regenerated -- identical content, new path, so this
-  campaign's data no longer depends on the old experiments/32_ lineage.
-- Real: data/26_real_empa_soc_sweep_soh_range/ (unchanged -- the actual
-  downloaded EMPA RO-Crate data, not something this campaign modifies).
+- Real: data/optimize_empa_01_real_empa/ -- a byte-for-byte copy of
+  data/26_real_empa_soc_sweep_soh_range/ (the actual downloaded EMPA
+  RO-Crate data; content unchanged, only the path is campaign-local).
 
 METHOD: for each of the 12 Initial_SOC points, filter synthetic AND
 real to that one SOC point, extract raw dV/dQ bins via
@@ -69,7 +68,7 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "pipeline"))
 from feature_engineering import create_features_by_voltage_bins
 
 SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "optimize_empa_01_synthetic_baseline", "raw", "advanced_synthetic_battery_data.csv")
-REAL_EMPA_CSV = os.path.join(PROJECT_DIR, "data", "26_real_empa_soc_sweep_soh_range", "raw", "real_empa_soc_sweep_raw.csv")
+REAL_EMPA_CSV = os.path.join(PROJECT_DIR, "data", "optimize_empa_01_real_empa", "raw", "real_empa_soc_sweep_raw.csv")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 

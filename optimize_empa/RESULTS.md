@@ -13,15 +13,21 @@ span multiple optimization attempts, not a single one-off experiment.
 
 ## Data sources
 
-- **Real EMPA**: `data/26_real_empa_soc_sweep_soh_range/raw/real_empa_soc_sweep_raw.csv`
-  -- the actual downloaded EMPA RO-Crate data (199 physical cells,
-  35,629 discharge cycles pooled across all 12 Initial_SOC points).
-  Unchanged by this campaign; built by
-  `experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/build_real_empa_soc_sweep_soh_range.py`.
+Both real and synthetic data live in this campaign's own
+`data/optimize_empa_NN_.../` namespace (byte-for-byte copies of the
+upstream data, not regenerated), so each attempt's folder is runnable
+independently of any other experiment's data path.
+
+- **Real EMPA**: `data/optimize_empa_01_real_empa/raw/real_empa_soc_sweep_raw.csv`
+  -- a byte-for-byte copy of `data/26_real_empa_soc_sweep_soh_range/`
+  (the actual downloaded EMPA RO-Crate data: 199 physical cells, 35,629
+  discharge cycles pooled across all 12 Initial_SOC points). Content
+  unchanged, only the path is campaign-local; originally built by
+  `experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/build_real_empa_soc_sweep_soh_range.py`
+  (local copy: `experiment/01_ratio_to_median_baseline/data_generation/build_real_empa_soc_sweep_soh_range.py`).
 - **Synthetic**: each attempt's own `data/optimize_empa_NN_.../` folder
-  (this campaign's own data namespace, separate from the old
-  `experiments/32_` lineage) -- see each attempt's own RESULTS.md for
-  what it contains.
+  (separate from the old `experiments/32_` lineage) -- see each attempt's
+  own RESULTS.md for what it contains.
 
 ## Running log of attempts
 

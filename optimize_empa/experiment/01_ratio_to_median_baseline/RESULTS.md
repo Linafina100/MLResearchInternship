@@ -38,8 +38,9 @@ lives in `experiments/32_fixed_voltage_cutoff_soc_sweep/RESULTS.md`
   byte copy of `data/32_synthetic_lfp_balance_fix_combined/` (249 LFP +
   249 NMC base battery configs; LFP has the negative-electrode-balance
   fix, NMC is the unmodified baseline).
-- Real: `data/26_real_empa_soc_sweep_soh_range/` (unchanged, 199 cells,
-  35,629 cycles).
+- Real: `data/optimize_empa_01_real_empa/` -- a byte-for-byte copy of
+  `data/26_real_empa_soc_sweep_soh_range/` (199 cells, 35,629 cycles;
+  content unchanged, only the path is campaign-local).
 
 ## Results
 
