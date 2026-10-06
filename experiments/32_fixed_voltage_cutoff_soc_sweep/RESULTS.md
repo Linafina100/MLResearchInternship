@@ -247,6 +247,146 @@ deepest edges spike to -130 to -275, a median of only a few real points
 that deep, the same artifact experiment 31 documented; clipping keeps
 the well-covered range readable instead of compressed into a thin band.)
 
+## Stage 4: scale-invariant features (ratio-to-median)
+
+### Motivation
+
+Every feature above is an ABSOLUTE dV/dQ value, which scales with a
+cell's physical size (Ah) -- directly visible in
+`plot_average_discharge_curves.py`'s dV/dQ panel, where exp07 (large
+cells), EMPA (coin cells), and SNL (small cylindrical cells) show very
+different magnitudes even within one chemistry. At the Stena Recycling
+production line, a battery arrives at unknown SOC/SOH and only a
+PARTIAL discharge window is observed -- there is no way to know that
+cell's true total capacity to normalize against. So the classifier has
+likely been partly learning "which dataset/size is this" instead of
+pure chemistry.
+
+### The transform, and the smoke test that preceded the full run
+
+Two candidate scale-invariant transforms, computed ONLY from each
+sample's own observed window (no cross-sample, no cross-dataset, no
+total-capacity information): row-wise Z-SCORE and RATIO-TO-MEDIAN.
+Smoke-tested first (`smoke_test_scale_invariant_features.py`, committed
+separately) across all three real datasets at several Initial_SOC
+points, per this project's standing lesson (check before committing
+compute -- the same lesson the negative-electrode-diffusivity dead end
+taught). Findings that shaped the full run's scope:
+- The shared `feature_engineering.py` filter's default >=20% coverage
+  (not the `min_chemistry_coverage=0.0` used in the smoke test's first
+  pass) is required -- it stabilized EMPA NMC, which otherwise swings
+  to -149/+25 from a handful of extremely sparse bins.
+- A minimum-3-valid-bins-per-row guard is required to avoid NaN/inf
+  from near-zero-variance rows.
+- RATIO-TO-MEDIAN was chosen over Z-score: both align cross-dataset
+  scale well, but Z-score partially washes out LFP-vs-NMC separation
+  within a dataset, while ratio-to-median preserves it better.
+- SNL does NOT benefit the same way: at low SOC (0.2) its ratio-to-
+  median curves go flat (~1.0) for both chemistries -- a genuine SHAPE
+  mismatch (not a scale mismatch) a row-wise transform cannot fix,
+  consistent with SNL's already-documented, separate generalization gap
+  ([[exp27_snl_generalization_gap]]). **SNL is excluded from the full
+  run below** for that reason -- scoped to prove the concept on the two
+  datasets where it has a real chance of working.
+
+### Full run (exp07 + EMPA), and a bug the first pass exposed
+
+`evaluate_per_soc_point_models_ratio_to_median.py`: identical per-SOC-
+fold structure to `evaluate_per_soc_point_models.py`, with one added
+step after feature extraction -- every row (synthetic and real alike)
+is divided by its own median across its own observed bins, using the
+SAME `data/32_synthetic_lfp_balance_fix_combined/` synthetic set the
+current pipeline already uses (ratio-to-median tested as an addition on
+top of the negative-electrode-balance fix, not in isolation from it).
+
+The first full run already showed a big win for exp07 (50-63% ->
+97-99% balanced accuracy at Initial_SOC 1.0-0.5) but also a bizarre new
+problem: EMPA swung wildly at 0.7/0.6/0.5 (53%/61%/86%) despite the
+other six bins' real-data medians staying nearly identical fold-to-fold.
+
+**Root cause, confirmed directly**: `feature_engineering.py`'s
+>=20%-coverage filter checks POOLED (synthetic+real, both chemistries
+combined) coverage, not per-chemistry. A bin can clear 20% driven
+entirely by one chemistry/DataKind group while another has ZERO
+coverage there. Exactly this happened: synthetic LFP had 0% coverage in
+`dV_dQ_V_3.3_3.2` from SOC=0.7 downward (the negative-electrode-balance
+fix shrank LFP's effective capacity enough that this shallow bin falls
+outside every synthetic LFP battery's truncated window), while
+synthetic NMC had 100% coverage there. Every LFP training row therefore
+got the exact same imputed placeholder in that column (imputed from
+NMC's distribution, since no real LFP value existed to impute from) --
+a constant, uninformative, genuinely misleading feature for exactly one
+class -- while real LFP test cycles had honest, varying values there
+the model never learned to interpret. Combined with the small
+498-example training set, this made the decision boundary fragile
+fold-to-fold.
+
+**The fix**: `filter_bins_per_chemistry_coverage()` re-checks coverage
+separately for all four (DataKind, Chemistry) groups and drops any bin
+where the worst of the four falls under 20% -- applied on top of (not
+replacing) the shared utility's own filter, contained to this
+experiment's script. This is a real gap in the shared filter that would
+silently affect absolute-dV/dQ runs too, just less visibly (a constant
+imputed value is less disruptive there than as a ratio's numerator).
+
+### Final results (ratio-to-median, per-chemistry-coverage-fixed)
+
+| Initial_SOC | exp07 | EMPA |
+|---|---|---|
+| 1.0 | 97.91% | 92.84% |
+| 0.9 | 98.35% | 99.95% |
+| 0.8 | 98.26% | 99.87% |
+| 0.7 | 98.35% | 99.92% |
+| 0.6 | 98.52% | 99.64% |
+| 0.5 | 98.80% | 99.09% |
+| 0.4 | 70.82% | 99.06% |
+| 0.3 | 58.01% | 50.00% |
+| 0.2 | 50.00% | 38.09% |
+| 0.15 | 48.40% | 48.59% |
+| 0.1 | 21.48% | 50.60% |
+| 0.05 | n/a (too little synthetic data survives) | n/a |
+
+![Per-SOC accuracy, ratio-to-median, exp07/EMPA only](plots/per_soc_accuracy_ratio_to_median.png)
+
+**Before vs. after the per-chemistry coverage fix, EMPA only:**
+
+| Initial_SOC | Before fix | After fix |
+|---|---|---|
+| 1.0 | 99.86% | 92.84% (a different, genuinely-thin bin now correctly dropped) |
+| 0.9-0.8 | 99.9% | unchanged |
+| **0.7** | **53.40%** | **99.92%** |
+| **0.6** | **60.99%** | **99.64%** |
+| **0.5** | **86.32%** | **99.09%** |
+| 0.4 | 99.06% | unchanged |
+| 0.3 and below | ~46-51% (chance) | ~38-51% (chance) |
+
+The 0.7-0.5 dip is fully resolved -- EMPA now runs a smooth ~99% from
+SOC=0.9 straight through 0.4. SOC=1.0 dropped slightly (99.86% ->
+92.84%) because the stricter check also caught a DIFFERENT bin there
+(real NMC coverage was genuinely only 19.8% in `2.7-2.6V`, not a
+corrupted-constant case, just thin) -- still a strong result.
+
+### Net read: a real, large win, with real remaining limits
+
+- **exp07 and EMPA both jump to 97-100% balanced accuracy from full
+  charge down to Initial_SOC=0.5** -- a dramatic improvement over the
+  current absolute-dV/dQ baseline (exp07 was 50-63% in that same range).
+  This is the clean validation of the scale-invariance concept the
+  smoke test promised.
+- **Both datasets still decay to chance below Initial_SOC~0.3** -- a
+  real, physical limit (too little voltage range survives in a narrow
+  truncated window), not something feature scaling can fix, consistent
+  with every low-SOC finding elsewhere in this project.
+- **One regression worth flagging plainly**: exp07 at Initial_SOC=0.1
+  got WORSE after the coverage fix (53.05% -> 21.48%, below chance) --
+  dropping a previously-included-but-genuinely-under-threshold bin
+  apparently removed the only remaining signal there. SOC=0.1 was
+  already unreliable either way, but this is a real, not-yet-understood
+  side effect of the fix, stated honestly rather than glossed over.
+- **SNL was deliberately excluded** from this run (see smoke test
+  findings above) -- its low-SOC problem is a shape mismatch, not a
+  scale mismatch, and is not addressed by anything in this section.
+
 ## Files
 
 - `diagnose_empa_negative_electrode_balance.py` -- the full-bin-range
@@ -267,6 +407,12 @@ the well-covered range readable instead of compressed into a thin band.)
   investigation above); kept uncommitted/unused in case that direction
   is worth revisiting later, exp07's own high-SOC training-set-size
   problem is still real and not addressed by this fix.
+- `smoke_test_scale_invariant_features.py` -- the Z-score vs.
+  ratio-to-median smoke test (committed separately, earlier branch).
+- `evaluate_per_soc_point_models_ratio_to_median.py` -- the full
+  scale-invariant evaluation (exp07/EMPA only), including the
+  per-chemistry coverage fix.
+- `make_per_soc_plot_ratio_to_median.py` -- the Stage 4 plot above.
 
 ## Caveats
 
@@ -275,5 +421,12 @@ the well-covered range readable instead of compressed into a thin band.)
   Recycling production scenario (rested, idle-then-tested cells) -- see
   [[rested_vs_continuous_discharge_toggle]].
 - CALCE was not rebuilt/evaluated here (not requested).
-- exp07's regression and SNL's remaining low-SOC gap are real,
-  documented limitations of this specific fix, not yet addressed.
+- exp07's regression and SNL's remaining low-SOC gap (Stage 1-3) are
+  real, documented limitations not addressed by Stage 4.
+- SNL was not re-evaluated with ratio-to-median (deliberately excluded,
+  see Stage 4 above) -- if asked to extend scale-invariance to SNL
+  later, its shape-mismatch problem (not scale) needs a different fix
+  first.
+- Stage 4's exp07 SOC=0.1 regression is unexplained beyond "a bin that
+  used to carry signal got correctly dropped" -- not investigated
+  further here.

@@ -1,0 +1,390 @@
+{
+  "exp07": {
+    "buckets": {
+      "1.0": {
+        "bin_cols": [
+          "dV_dQ_V_3.4_3.3",
+          "dV_dQ_V_3.3_3.2",
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2357,
+        "n_dropped_min_bins": 2,
+        "raw_accuracy": 0.9809079338141705,
+        "balanced_accuracy": 0.9791279949250964,
+        "LFP_recall": 0.9756521739130435,
+        "NMC_recall": 0.9826038159371493
+      },
+      "0.9": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2356,
+        "n_dropped_min_bins": 3,
+        "raw_accuracy": 0.9830220713073005,
+        "balanced_accuracy": 0.9834621867142193,
+        "LFP_recall": 0.9843205574912892,
+        "NMC_recall": 0.9826038159371493
+      },
+      "0.8": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2356,
+        "n_dropped_min_bins": 3,
+        "raw_accuracy": 0.982597623089983,
+        "balanced_accuracy": 0.9825911065748465,
+        "LFP_recall": 0.9825783972125436,
+        "NMC_recall": 0.9826038159371493
+      },
+      "0.7": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2356,
+        "n_dropped_min_bins": 3,
+        "raw_accuracy": 0.9830220713073005,
+        "balanced_accuracy": 0.9834621867142193,
+        "LFP_recall": 0.9843205574912892,
+        "NMC_recall": 0.9826038159371493
+      },
+      "0.6": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2356,
+        "n_dropped_min_bins": 3,
+        "raw_accuracy": 0.9838709677419355,
+        "balanced_accuracy": 0.9852043469929649,
+        "LFP_recall": 0.9878048780487805,
+        "NMC_recall": 0.9826038159371493
+      },
+      "0.5": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2346,
+        "n_dropped_min_bins": 13,
+        "raw_accuracy": 0.9880647911338448,
+        "balanced_accuracy": 0.987976931123713,
+        "LFP_recall": 0.9878048780487805,
+        "NMC_recall": 0.9881489841986456
+      },
+      "0.4": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2325,
+        "n_dropped_min_bins": 34,
+        "raw_accuracy": 0.8559139784946237,
+        "balanced_accuracy": 0.7081881533101045,
+        "LFP_recall": 0.4163763066202091,
+        "NMC_recall": 1.0
+      },
+      "0.3": {
+        "bin_cols": [
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2325,
+        "n_dropped_min_bins": 34,
+        "raw_accuracy": 0.7926881720430108,
+        "balanced_accuracy": 0.5801393728222997,
+        "LFP_recall": 0.1602787456445993,
+        "NMC_recall": 1.0
+      },
+      "0.2": {
+        "bin_cols": [
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2325,
+        "n_dropped_min_bins": 34,
+        "raw_accuracy": 0.7531182795698925,
+        "balanced_accuracy": 0.5,
+        "LFP_recall": 0.0,
+        "NMC_recall": 1.0
+      },
+      "0.15": {
+        "bin_cols": [
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 2325,
+        "n_dropped_min_bins": 34,
+        "raw_accuracy": 0.7290322580645161,
+        "balanced_accuracy": 0.4840091376356368,
+        "LFP_recall": 0.0,
+        "NMC_recall": 0.9680182752712736
+      },
+      "0.1": {
+        "bin_cols": [
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 486,
+        "n": 2325,
+        "n_dropped_min_bins": 46,
+        "raw_accuracy": 0.11268817204301075,
+        "balanced_accuracy": 0.21475582892403944,
+        "LFP_recall": 0.4163763066202091,
+        "NMC_recall": 0.013135351227869789
+      }
+    },
+    "n_cells": 4,
+    "n_cycles": 2360
+  },
+  "EMPA": {
+    "buckets": {
+      "1.0": {
+        "bin_cols": [
+          "dV_dQ_V_3.3_3.2",
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35522,
+        "n_dropped_min_bins": 107,
+        "raw_accuracy": 0.9669219075502505,
+        "balanced_accuracy": 0.92837364898281,
+        "LFP_recall": 0.8701298701298701,
+        "NMC_recall": 0.9866174278357501
+      },
+      "0.9": {
+        "bin_cols": [
+          "dV_dQ_V_3.3_3.2",
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35586,
+        "n_dropped_min_bins": 43,
+        "raw_accuracy": 0.9991288709042883,
+        "balanced_accuracy": 0.9994759972954699,
+        "LFP_recall": 1.0,
+        "NMC_recall": 0.9989519945909399
+      },
+      "0.8": {
+        "bin_cols": [
+          "dV_dQ_V_3.3_3.2",
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35609,
+        "n_dropped_min_bins": 20,
+        "raw_accuracy": 0.9978376253194418,
+        "balanced_accuracy": 0.9986994561362024,
+        "LFP_recall": 1.0,
+        "NMC_recall": 0.9973989122724048
+      },
+      "0.7": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35464,
+        "n_dropped_min_bins": 165,
+        "raw_accuracy": 0.9994642454319874,
+        "balanced_accuracy": 0.9992135696019191,
+        "LFP_recall": 0.9988344988344988,
+        "NMC_recall": 0.9995926403693394
+      },
+      "0.6": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35553,
+        "n_dropped_min_bins": 76,
+        "raw_accuracy": 0.9984530138103677,
+        "balanced_accuracy": 0.9964161637935625,
+        "LFP_recall": 0.9933399933399933,
+        "NMC_recall": 0.9994923342471317
+      },
+      "0.5": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35610,
+        "n_dropped_min_bins": 19,
+        "raw_accuracy": 0.995478798090424,
+        "balanced_accuracy": 0.9909101673896972,
+        "LFP_recall": 0.984015984015984,
+        "NMC_recall": 0.9978043507634103
+      },
+      "0.4": {
+        "bin_cols": [
+          "dV_dQ_V_3.2_3.1",
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35602,
+        "n_dropped_min_bins": 27,
+        "raw_accuracy": 0.9949160159541599,
+        "balanced_accuracy": 0.9905719871424696,
+        "LFP_recall": 0.984015984015984,
+        "NMC_recall": 0.9971279902689553
+      },
+      "0.3": {
+        "bin_cols": [
+          "dV_dQ_V_3.1_3.0",
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35560,
+        "n_dropped_min_bins": 69,
+        "raw_accuracy": 0.83107424071991,
+        "balanced_accuracy": 0.4999830818163362,
+        "LFP_recall": 0.0,
+        "NMC_recall": 0.9999661636326724
+      },
+      "0.2": {
+        "bin_cols": [
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35542,
+        "n_dropped_min_bins": 87,
+        "raw_accuracy": 0.633138258961229,
+        "balanced_accuracy": 0.3809419014084507,
+        "LFP_recall": 0.0,
+        "NMC_recall": 0.7618838028169014
+      },
+      "0.15": {
+        "bin_cols": [
+          "dV_dQ_V_3.0_2.9",
+          "dV_dQ_V_2.9_2.8",
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 498,
+        "n": 35569,
+        "n_dropped_min_bins": 60,
+        "raw_accuracy": 0.807782057409542,
+        "balanced_accuracy": 0.48594526942461863,
+        "LFP_recall": 0.0,
+        "NMC_recall": 0.9718905388492373
+      },
+      "0.1": {
+        "bin_cols": [
+          "dV_dQ_V_2.8_2.7",
+          "dV_dQ_V_2.7_2.6",
+          "dV_dQ_V_2.6_2.5"
+        ],
+        "n_synth_batteries": 486,
+        "n": 34593,
+        "n_dropped_min_bins": 1048,
+        "raw_accuracy": 0.8227387043621542,
+        "balanced_accuracy": 0.5060161530147887,
+        "LFP_recall": 0.020812520812520812,
+        "NMC_recall": 0.9912197852170567
+      }
+    },
+    "n_cells": 199,
+    "n_cycles": 35629
+  }
+}
