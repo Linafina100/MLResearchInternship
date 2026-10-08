@@ -46,15 +46,15 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 
 sys.path.insert(0, PROJECT_DIR)  # for root ml_pipeline.py and feature_engineering.py
 
 from ml_pipeline import run_ml_pipeline
 from feature_engineering import create_features_by_voltage_bins
 
-SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "empa", "raw", "advanced_synthetic_battery_data.csv")
-REAL_RAW_CSV = os.path.join(PROJECT_DIR, "data", "empa", "raw", "real_empa_raw.csv")
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "raw", "advanced_synthetic_battery_data.csv")
+REAL_RAW_CSV = os.path.join(PROJECT_DIR, "data", "raw", "real_empa_raw.csv")
 RAW_CSV = os.path.join(SCRIPT_DIR, "sim_and_real_raw.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
