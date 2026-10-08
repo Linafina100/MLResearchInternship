@@ -1,7 +1,8 @@
 """
 Real-to-sim Initial_SOC sweep evaluation against the EMPA RO-Crate
-dataset. Trains ONE model on the synthetic dataset and tests it
-separately against each Initial_SOC bucket of the EMPA real dataset.
+dataset. Trains ONE model on the synthetic dataset using ALL surviving 
+voltage bins (no target-zone restriction) and tests it separately against 
+each Initial_SOC bucket of the EMPA real dataset.
 
 Saves results directly to sweep_results.json for make_plot.py.
 """
@@ -10,7 +11,6 @@ matplotlib.use("Agg")
 
 import json
 import os
-import re
 import sys
 
 import numpy as np
@@ -35,12 +35,8 @@ FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 RESULTS_JSON = os.path.join(SCRIPT_DIR, "sweep_results.json")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 
-TARGET_ZONE_MIN, TARGET_ZONE_MAX = 2.5, 3.0
-BIN_COL_RE = re.compile(r"dV_dQ_V_([\d.]+)_([\d.]+)")
-
-# Aligned with make_plot.py SOC sweep points
+# Synkroniserad med make_plot.py och build_real_empa_4.py
 SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
-EXTRAPOLATION_POINTS = {0.4, 0.3, 0.2, 0.15, 0.1, 0.05}
 
 
 def build_combined_raw_csv():
@@ -62,16 +58,6 @@ def build_combined_raw_csv():
     return combined
 
 
-def target_zone_bin_cols(all_bin_cols):
-    kept = []
-    for col in all_bin_cols:
-        m = BIN_COL_RE.match(col)
-        bin_high, bin_low = float(m.group(1)), float(m.group(2))
-        if bin_low >= TARGET_ZONE_MIN and bin_high <= TARGET_ZONE_MAX:
-            kept.append(col)
-    return kept
-
-
 def extract_features_with_kind():
     if not os.path.exists(RAW_CSV):
         build_combined_raw_csv()
@@ -79,7 +65,7 @@ def extract_features_with_kind():
         print(f"Note: '{RAW_CSV}' already exists -- reusing it. Delete it to re-build from source.")
 
     print("\nExtracting features (root feature_engineering.py, exclude_final_transition=True, "
-          ">=20% mutual-coverage filter)...")
+          "default V_BIN_MIN=1.9, >=20% mutual-coverage filter, no target-zone restriction)...")
     features_df = create_features_by_voltage_bins(RAW_CSV, output_dir=FEATURES_DIR, exclude_final_transition=True)
 
     raw_df = pd.read_csv(RAW_CSV, low_memory=False)
@@ -88,28 +74,25 @@ def extract_features_with_kind():
     features_df['DataKind'] = features_df['Battery_ID'].map(id_cols['DataKind'])
     features_df['Initial_SOC'] = features_df['Battery_ID'].map(id_cols['Initial_SOC'])
 
-    all_bin_cols = [c for c in features_df.columns if c.startswith('dV_dQ_V_')]
-    zone_bin_cols = target_zone_bin_cols(all_bin_cols)
-    print(f"\nAll surviving bins: {all_bin_cols}")
-    print(f"Target-zone ({TARGET_ZONE_MIN}-{TARGET_ZONE_MAX}V) bins kept for training: {zone_bin_cols}")
-    dropped_cols = [c for c in all_bin_cols if c not in zone_bin_cols]
-    if dropped_cols:
-        print(f"Dropped (outside target zone): {dropped_cols}")
-
+    all_bin_cols = sorted(
+        (c for c in features_df.columns if c.startswith('dV_dQ_V_')),
+        key=lambda c: -float(c.split('_')[3]),
+    )
+    print(f"\nSurviving bins across the full voltage span ({len(all_bin_cols)}): {all_bin_cols}")
     print(features_df.groupby(['DataKind', 'Chemistry']).size().rename('n_batteries'))
-    return features_df, zone_bin_cols
+    return features_df, all_bin_cols
 
 
-def report_magnitude_and_coverage(features_df, zone_bin_cols, soc):
+def report_magnitude_and_coverage(features_df, bin_cols, soc):
     real_sub_all = features_df[(features_df.DataKind == "real") & (features_df.Initial_SOC == soc)]
     synth_sub_all = features_df[features_df.DataKind == "synthetic"]
     for chem in ("LFP", "NMC"):
         real_sub = real_sub_all[real_sub_all.Chemistry == chem]
         synth_sub = synth_sub_all[synth_sub_all.Chemistry == chem]
-        print(f"  {chem} REAL  mean: {real_sub[zone_bin_cols].mean().round(2).to_dict()}  "
-              f"coverage: {real_sub[zone_bin_cols].notna().mean().round(2).to_dict()}")
+        print(f"  {chem} REAL  mean: {real_sub[bin_cols].mean().round(2).to_dict()}  "
+              f"coverage: {real_sub[bin_cols].notna().mean().round(2).to_dict()}")
     print(f"  (for reference) SYNTH mean/coverage pooled across all Initial_SOC: "
-          f"{synth_sub_all[zone_bin_cols].mean().round(2).to_dict()}")
+          f"{synth_sub_all[bin_cols].mean().round(2).to_dict()}")
 
 
 def fit_models(X_train_s, y_train):
@@ -145,18 +128,17 @@ def evaluate_bucket(models, imputer, scaler, le, lower, upper, real_bucket_df, f
 
 
 def main():
-    features_df, zone_bin_cols = extract_features_with_kind()
+    features_df, bin_cols = extract_features_with_kind()
 
-    if not zone_bin_cols:
-        print("\nNo surviving bins inside the target zone -- cannot train. Stopping here.")
+    if not bin_cols:
+        print("\nNo surviving bins -- cannot train. Stopping here.")
         return
 
     synth_df = features_df[features_df['DataKind'] == 'synthetic']
     print(f"\n{'=' * 70}\nTraining once on the full synthetic set "
-          f"({len(synth_df)} batteries), features restricted to the "
-          f"{TARGET_ZONE_MIN}-{TARGET_ZONE_MAX}V target zone.\n{'=' * 70}")
+          f"({len(synth_df)} batteries) using all {len(bin_cols)} surviving bins.\n{'=' * 70}")
 
-    X_train = synth_df[zone_bin_cols].replace([np.inf, -np.inf], np.nan)
+    X_train = synth_df[bin_cols].replace([np.inf, -np.inf], np.nan)
     le = LabelEncoder()
     y_train = le.fit_transform(synth_df['Chemistry'])
     print(f"Target classes mapped: {dict(zip(le.classes_, le.transform(le.classes_)))}")
@@ -177,10 +159,10 @@ def main():
         if len(real_bucket) == 0:
             print(f"\n--- Initial_SOC={soc}: no surviving real batteries, skipped ---")
             continue
-        tag = " (EXTRAPOLATION: below synthetic training range)" if soc in EXTRAPOLATION_POINTS else ""
-        print(f"\n--- Initial_SOC={soc}{tag} ---")
-        report_magnitude_and_coverage(features_df, zone_bin_cols, soc)
-        result = evaluate_bucket(models, imputer, scaler, le, lower, upper, real_bucket, zone_bin_cols)
+
+        print(f"\n--- Initial_SOC={soc} ---")
+        report_magnitude_and_coverage(features_df, bin_cols, soc)
+        result = evaluate_bucket(models, imputer, scaler, le, lower, upper, real_bucket, bin_cols)
         bucket_results[str(soc)] = result
         n_lfp = (real_bucket.Chemistry == 'LFP').sum()
         n_nmc = (real_bucket.Chemistry == 'NMC').sum()
@@ -190,7 +172,7 @@ def main():
                   f"LFP_recall={r['LFP_recall']:.3f}  NMC_recall={r['NMC_recall']:.3f}")
 
     print(f"\n{'=' * 70}\n=== SWEEP SUMMARY ===\n{'=' * 70}")
-    print(f"Target-zone bins used: {zone_bin_cols}\n")
+    print(f"Bins used ({len(bin_cols)}): {bin_cols}\n")
     header = f"{'Initial_SOC':<12}{'n':<10}{'RF balanced':<14}{'RF LFP rec':<12}{'RF NMC rec':<12}{'XGB balanced':<14}{'XGB LFP rec':<12}{'XGB NMC rec':<12}"
     print(header)
     for soc in SOC_START_POINTS:
@@ -198,11 +180,10 @@ def main():
         if s_str not in bucket_results:
             continue
         rf, xgb = bucket_results[s_str]["Random Forest"], bucket_results[s_str]["XGBoost"]
-        tag = "*" if soc in EXTRAPOLATION_POINTS else " "
-        print(f"{soc}{tag:<11}{rf['n']:<10}{rf['balanced_accuracy']*100:<14.2f}{rf['LFP_recall']:<12.3f}"
+        print(f"{soc:<12}{rf['n']:<10}{rf['balanced_accuracy']*100:<14.2f}{rf['LFP_recall']:<12.3f}"
               f"{rf['NMC_recall']:<12.3f}{xgb['balanced_accuracy']*100:<14.2f}{xgb['LFP_recall']:<12.3f}{xgb['NMC_recall']:<12.3f}")
 
-    # Persist results into sweep_results.json for make_plot.py
+    # Spara till sweep_results.json för make_plot.py
     existing_results = {}
     if os.path.exists(RESULTS_JSON):
         try:

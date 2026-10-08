@@ -27,7 +27,7 @@ RESCALE_TARGET_AH = 2.0
 N_RESAMPLE_POINTS = 80
 MIN_RAW_POINTS_AFTER_TRUNCATION = 5
 
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
 
 ACTIVE_MATERIAL_TO_CHEMISTRY = {
     "LithiumIronPhosphateOxide": "LFP",
@@ -82,9 +82,6 @@ def resample_on_capacity(t_s, voltage, cap_ah, n_points=N_RESAMPLE_POINTS):
 
 
 def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
-    """Keeps only the portion of a full real discharge trace occurring after
-    (1 - soc_start) of this cycle's delivered capacity. Time and Capacity are
-    reset to 0. No target-zone voltage boundary check is enforced."""
     total_capacity = cap_ah[-1]
     cap_threshold = (1.0 - soc_start) * total_capacity
 
@@ -104,6 +101,11 @@ def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
 
     if len(t_kept) < MIN_RAW_POINTS_AFTER_TRUNCATION:
         return None
+
+    # --- ADD IT HERE ---
+    if v_kept.min() >= 3.0:
+        return None  # discards shallow discharges that never dip below 3.0V
+    # -------------------
 
     return t_kept, v_kept, cap_kept
 
