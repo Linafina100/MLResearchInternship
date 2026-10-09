@@ -43,7 +43,7 @@ import matplotlib.pyplot as plt
 random.seed(42)
 np.random.seed(42)
 
-SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
+SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.05))
 SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
 SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
 SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))

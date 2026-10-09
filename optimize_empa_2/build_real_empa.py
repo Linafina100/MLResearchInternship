@@ -2,21 +2,7 @@
 Experiment 24: same EMPA RO-Crate parsing as experiment 22's
 build_real_empa_dataset.py (data/Dataset-rocrate/, 199 coin cells, 167
 NMC / 32 LFP), but selecting real cycles by a SOH RANGE (default
-[0.8, 1.0]) instead of a single point+tolerance -- to match the
-SOH-range synthetic training data this experiment's
-simulate_batteries_soh_range.py generates.
-
-Confirmed via a standalone SOH histogram before writing this (see
-RESULTS.md, "Step 0"): both chemistries have meaningful real cycle
-coverage across the full 0.8-1.0 band, including near 1.0 (LFP: 6006
-cycles from all 32 cells; NMC: 29623 cycles from 167 cells), so a range
-filter isn't starved of data at the high end.
-
-Same real BOL/SOH/C-rate derivation, no-C-rate-filter default, and
-mAh->2.0Ah rescaling as experiment 22 (see that script's docstring for
-why each of those choices was made) -- only the SOH selection logic
-changes (single `if abs(soh - SOH_TARGET) > SOH_TOLERANCE` check
-replaced with a `SOH_MIN <= soh <= SOH_MAX` range check).
+[0.8, 1.0]) and generating truncated versions for different Initial_SOC levels.
 """
 import glob
 import json
@@ -26,72 +12,28 @@ import numpy as np
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 EMPA_DIR = os.path.join(PROJECT_DIR, "data", "Empa_dataset")
 
 SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
 SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))
-# NOTE: unlike the synthetic side, this real dataset does NOT offer a
-# 0.1-0.2C option for every chemistry -- diagnosed empirically in
-# experiment 22 (see its RESULTS.md): all 32 real LFP cells were cycled
-# at a fixed ~1.0-1.07C, while the 167 real NMC cells span a wide range
-# (~0.07C-1.3C, a genuine minority near 0.1-0.2C). A strict [0.1, 0.2]
-# C-rate filter would silently drop LFP from the real test set entirely.
-# Default here is "no real C-rate filtering" (use every SOH-matched
-# cycle regardless of rate) so both chemistries are represented.
 C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.0))
 C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 999.0))
-CURRENT_EPS_A = 5e-7  # below this, treat as rest/noise, not charge or discharge
+CURRENT_EPS_A = 5e-7
 MIN_SEGMENT_POINTS = 15
-BOL_WINDOW_CYCLES = 10  # first N cycles used to establish BOL capacity
-MAX_SEGMENT_DURATION_HOURS = 24.0  # rejects the occasional multi-week pre-test
-                                    # storage hold masquerading as "cycle 0"
-                                    # (near-constant tiny current at a flat,
-                                    # already-low voltage for 1000+ hours --
-                                    # confirmed by inspection, not a real
-                                    # discharge)
-MIN_VOLTAGE_SPAN_V = 0.3  # a real discharge sweeps a meaningful voltage
-                           # range; a flat trace at fixed voltage is a rest
-                           # artifact, not a discharge curve
-RESCALE_TARGET_AH = 2.0  # These are mAh-scale coin cells (BOL ~1.3-13 mAh)
-                          # vs. the synthetic side's Ah-scale cells
-                          # (Target_Capacity_Ah in {1.2, 2.0, 3.5}, see
-                          # experiments/21.../simulate_batteries_lfp_ocp_tuned.py).
-                          # dV/dQ's denominator (Ah) makes its magnitude
-                          # scale with absolute cell capacity, not just
-                          # chemistry shape -- comparing raw real Ah
-                          # against raw synthetic Ah produced a spurious
-                          # ~1000x magnitude gap that swamped the real
-                          # chemistry signal entirely (experiment 22).
-                          # Each real cell's capacity trace is rescaled by
-                          # capacity_fraction * RESCALE_TARGET_AH (mapping
-                          # its own [0, BOL] onto [0, 2.0] Ah) so dV/dQ is
-                          # computed on the same absolute capacity footing
-                          # the synthetic model was trained on --
-                          # equivalent to comparing at matched SOC, not
-                          # matched raw charge.
-N_RESAMPLE_POINTS = 80  # feature_engineering.py's create_features_by_voltage_bins
-                         # only counts a dV/dQ transition "valid" if its
-                         # step has dQ > 1e-5 Ah -- tuned for the synthetic
-                         # side's ~Ah-scale batteries over ~3000 t_interp
-                         # points. These real coin cells hold ~1-13 mAh
-                         # total, natively sampled every 10s (~300-1000
-                         # points/segment): raw per-step dQ is ~1e-6 Ah,
-                         # an order of magnitude under the threshold, so
-                         # nearly every real battery was silently dropped
-                         # until this resample was added (experiment 22).
-                         # Interpolating onto a coarse, evenly-spaced-in-
-                         # capacity grid keeps per-step dQ safely above
-                         # 1e-5 Ah even for the smallest (~1.3 mAh) cells.
+BOL_WINDOW_CYCLES = 10
+MAX_SEGMENT_DURATION_HOURS = 24.0
+MIN_VOLTAGE_SPAN_V = 0.3
+RESCALE_TARGET_AH = 2.0
+N_RESAMPLE_POINTS = 80
 
 ACTIVE_MATERIAL_TO_CHEMISTRY = {
     "LithiumIronPhosphateOxide": "LFP",
     "LithiumNickelCobaltManganeseOxide": "NMC",
 }
 
-#RUN_LABEL = os.environ.get("RUN_LABEL", "24_real_empa_soh_0.8_1.0")
-#OUT_RAW_CSV = os.path.join(PROJECT_DIR, "data", RUN_LABEL, "raw", "real_empa_raw.csv")
-OUT_RAW_CSV = os.path.join(PROJECT_DIR, "data", "raw", "real_empa_raw.csv")
+OUT_RAW_DIR = os.path.join(PROJECT_DIR, "data", "raw")
+
 
 def get_chemistry(cell_dir, cell_id):
     meta_path = os.path.join(cell_dir, f"{cell_id}.metadata.json")
@@ -106,8 +48,6 @@ def get_chemistry(cell_dir, cell_id):
 
 
 def discharge_segments(df):
-    """Yields (cycle_number, segment_df) for each cycle's discharge phase
-    (current_ampere < -CURRENT_EPS_A), sorted by time within the cycle."""
     for cycle_number, cycle_df in df.groupby("cycle_dimensionless", sort=True):
         cycle_df = cycle_df.sort_values("test_time_millisecond", kind="stable")
         seg = cycle_df[cycle_df["current_ampere"] < -CURRENT_EPS_A]
@@ -129,12 +69,10 @@ def segment_capacity_ah(seg):
     cap = np.concatenate([[0.0], np.cumsum(
         np.diff(t_hours.values) * (i_abs[:-1] + i_abs[1:]) / 2.0
     )])
-    return t_hours.values * 3600.0, cap  # (time_seconds_from_segment_start, capacity_ah)
+    return t_hours.values * 3600.0, cap
 
 
 def resample_on_capacity(t_s, voltage, cap_ah, n_points=N_RESAMPLE_POINTS):
-    """Interpolates (Time, Voltage) onto n_points evenly spaced along the
-    monotonic Capacity axis -- see N_RESAMPLE_POINTS for why."""
     cap_grid = np.linspace(cap_ah[0], cap_ah[-1], n_points)
     t_resampled = np.interp(cap_grid, cap_ah, t_s)
     v_resampled = np.interp(cap_grid, cap_ah, voltage)
@@ -158,7 +96,6 @@ def process_cell(cell_dir):
     if not segments:
         return None, f"{cell_id}: no valid discharge segments"
 
-    # BOL capacity from the first BOL_WINDOW_CYCLES cycles.
     early = [(n, seg) for n, seg in segments if n < BOL_WINDOW_CYCLES]
     if not early:
         early = segments[:BOL_WINDOW_CYCLES]
@@ -169,8 +106,7 @@ def process_cell(cell_dir):
     if bol_capacity <= 0:
         return None, f"{cell_id}: could not establish BOL capacity"
 
-    rows = []
-    n_matched = 0
+    cell_cycles = []
     for cycle_number, seg in segments:
         t_s, cap_ah = segment_capacity_ah(seg)
         capacity = cap_ah[-1]
@@ -185,29 +121,20 @@ def process_cell(cell_dir):
         if not (C_RATE_MIN <= c_rate <= C_RATE_MAX):
             continue
 
-        n_matched += 1
-        cap_ah_rescaled = cap_ah / bol_capacity * RESCALE_TARGET_AH
-        t_rs, v_rs, cap_rs = resample_on_capacity(t_s, seg["voltage_volt"].values, cap_ah_rescaled)
-        rows.append(pd.DataFrame({
-            "Time [s]": t_rs,
-            "Voltage [V]": v_rs,
-            "Capacity [A.h]": cap_rs,
-            "Chemistry": chemistry,
-            "Variation_ID": f"{cell_id}_cycle_{cycle_number}",
-            "Target_Capacity_Ah": RESCALE_TARGET_AH,
-            "Real_BOL_Capacity_mAh": bol_capacity * 1000,
-            "Size_Multiplier": 0.0,
-            "SOH": round(float(soh), 4),
-            "Initial_SOC": 1.0,
-            "Ambient_Temperature_C": float(seg["ambient_temperature_celsius"].mean()),
-        }))
+        cell_cycles.append({
+            "cycle_number": cycle_number,
+            "seg": seg,
+            "t_s": t_s,
+            "cap_ah": cap_ah,
+            "capacity": capacity,
+            "bol_capacity": bol_capacity,
+            "soh": soh,
+            "chemistry": chemistry,
+            "cell_id": cell_id
+        })
 
-    status = (f"{cell_id} ({chemistry}): BOL={bol_capacity * 1000:.3f} mAh, "
-              f"{len(segments)} discharge cycles scanned, {n_matched} matched "
-              f"SOH in [{SOH_MIN},{SOH_MAX}] & C-rate [{C_RATE_MIN},{C_RATE_MAX}]")
-    if not rows:
-        return None, status
-    return pd.concat(rows, ignore_index=True), status
+    status = f"{cell_id} ({chemistry}): {len(cell_cycles)} matched cycles found"
+    return cell_cycles, status
 
 
 def main():
@@ -215,33 +142,83 @@ def main():
     print(f"Found {len(cell_dirs)} cell directories in '{EMPA_DIR}'")
     print(f"Target: SOH in [{SOH_MIN}, {SOH_MAX}], C-rate [{C_RATE_MIN}, {C_RATE_MAX}]\n")
 
-    all_rows = []
-    n_lfp_cells = n_nmc_cells = 0
+    all_cell_data = []
     for i, cell_dir in enumerate(cell_dirs, 1):
-        out, status = process_cell(cell_dir)
+        cell_cycles, status = process_cell(cell_dir)
         print(f"[{i}/{len(cell_dirs)}] {status}")
-        if out is not None:
-            all_rows.append(out)
-            if out["Chemistry"].iloc[0] == "LFP":
-                n_lfp_cells += 1
-            else:
-                n_nmc_cells += 1
+        if cell_cycles:
+            all_cell_data.extend(cell_cycles)
 
-    if not all_rows:
+    if not all_cell_data:
         print("\nNo matching cycles found anywhere -- widen SOH_MIN/SOH_MAX or the C-rate window.")
         return
 
-    combined = pd.concat(all_rows, ignore_index=True)
-    os.makedirs(os.path.dirname(OUT_RAW_CSV), exist_ok=True)
-    combined.to_csv(OUT_RAW_CSV, index=False)
+    soc_levels = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05]
+    os.makedirs(OUT_RAW_DIR, exist_ok=True)
 
-    n_variations = combined["Variation_ID"].nunique()
+    # Bygg dataset för varje Initial_SOC-nivå genom att kapa kurvorna
+    for target_soc in soc_levels:
+        rows = []
+        for item in all_cell_data:
+            seg = item["seg"]
+            t_s = item["t_s"]
+            cap_ah = item["cap_ah"]
+            bol_capacity = item["bol_capacity"]
+            soh = item["soh"]
+            chemistry = item["chemistry"]
+            cell_id = item["cell_id"]
+            cycle_number = item["cycle_number"]
+
+            total_cap = cap_ah[-1]
+            if total_cap <= 0:
+                continue
+
+            # Kapa bort början av urladdningen upp till (1.0 - target_soc)
+            cutoff_capacity = total_cap * (1.0 - target_soc)
+            mask = cap_ah >= cutoff_capacity
+            if mask.sum() < MIN_SEGMENT_POINTS:
+                continue
+
+            seg_trunc = seg[mask].reset_index(drop=True)
+            t_s_filtered = t_s[mask]
+            t_s_trunc = t_s_filtered - t_s_filtered[0]
+            cap_ah_filtered = cap_ah[mask]
+            cap_ah_trunc = cap_ah_filtered - cutoff_capacity
+
+            if len(cap_ah_trunc) < 2 or (cap_ah_trunc[-1] - cap_ah_trunc[0]) <= 0:
+                continue
+
+            cap_ah_rescaled = cap_ah_trunc / bol_capacity * RESCALE_TARGET_AH
+            t_rs, v_rs, cap_rs = resample_on_capacity(t_s_trunc, seg_trunc["voltage_volt"].values, cap_ah_rescaled)
+
+            rows.append(pd.DataFrame({
+                "Time [s]": t_rs,
+                "Voltage [V]": v_rs,
+                "Capacity [A.h]": cap_rs,
+                "Chemistry": chemistry,
+                "Variation_ID": f"{cell_id}_cycle_{cycle_number}_soc_{int(target_soc*100)}",
+                "Target_Capacity_Ah": RESCALE_TARGET_AH,
+                "Real_BOL_Capacity_mAh": bol_capacity * 1000,
+                "Size_Multiplier": 0.0,
+                "SOH": round(float(soh), 4),
+                "Initial_SOC": target_soc,
+                "Ambient_Temperature_C": float(seg_trunc["ambient_temperature_celsius"].mean()),
+            }))
+
+        if rows:
+            combined_soc = pd.concat(rows, ignore_index=True)
+            out_path = os.path.join(OUT_RAW_DIR, f"real_empa_raw_soc_{int(target_soc*100)}.csv")
+            combined_soc.to_csv(out_path, index=False)
+            print(f"Skapade kapat dataset för SOC {int(target_soc*100)}%: {len(combined_soc)} rader ({combined_soc['Variation_ID'].nunique()} cykler)")
+
+    # Spara även standardfilen för 100% som bakåtkompatibilitet
+    default_100_path = os.path.join(OUT_RAW_DIR, "real_empa_raw.csv")
+    if os.path.exists(os.path.join(OUT_RAW_DIR, "real_empa_raw_soc_100.csv")):
+        import shutil
+        shutil.copy(os.path.join(OUT_RAW_DIR, "real_empa_raw_soc_100.csv"), default_100_path)
+
     print(f"\n{'=' * 70}")
-    print(f"-> {OUT_RAW_CSV}")
-    print(f"   {n_variations} real discharge cycles kept "
-          f"({n_lfp_cells} LFP cells, {n_nmc_cells} NMC cells contributing), "
-          f"{len(combined)} rows")
-    print(combined.groupby("Chemistry")["Variation_ID"].nunique())
+    print("Alla kapade SOC-dataset har genererats i mappen data/raw/!")
 
 
 if __name__ == "__main__":
