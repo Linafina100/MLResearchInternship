@@ -1,360 +1,182 @@
-"""
-Experiment 24: same validated fixes as experiment 21
-(simulate_batteries_lfp_ocp_tuned.py -- SOH-scaling, dense t_interp, NMC
-positive-particle diffusivity/10 on Chen2020+OKane2022, LFP OCP tail rate
-softened to -3), but with SOH sampled from a RANGE (default 0.8-1.0) per
-battery instead of held fixed at 0.8.
-
-Every prior sim-to-real result (experiments 20-23) calibrated and tested
-at a single SOH=0.8 point. This asks whether those fixes still hold across
-a healthier slice of a battery's life, not just the one point they were
-tuned against -- see RESULTS.md.
-
-Only change from experiment 21's script: SOH_FIXED -> SOH_MIN/SOH_MAX with
-soh = random.uniform(SOH_MIN, SOH_MAX) drawn per battery (mirrors the
-SOH_MIN/SOH_MAX pattern already used by root simulate_batteries.py).
-Diffusivity fix, OCP fix, C-rate range, cutoffs, capacity targets, variation
-count, t_interp splicing -- all identical to experiment 21.
-
-Usage: env vars DATA_DIR, RUN_LABEL, OUTPUT_DATA_CSV, FAILURE_LOG_CSV,
-DISCHARGE_PLOT_PNG, LFP_LOWER_CUTOFF, NMC_LOWER_CUTOFF, SOH_MIN, SOH_MAX,
-C_RATE_MIN/MAX, SOC_RANGE_MIN/MAX, DIFFUSIVITY_FACTOR, LFP_OCP_RATE_CONSTANT,
-VARIATIONS_PER_SIZE (all optional). VARIATIONS_PER_SIZE and the
-initial_soc-scaled T_INTERP_N_POINTS_FULL/T_INTERP_MIN_POINTS (see
-solve_dense) were both added for experiment 26's SOC=0.05 resimulation --
-widening SOC_RANGE_MIN downward, on its own, undersamples the
-higher-voltage bins (same battery count spread over a wider Initial_SOC
-range) AND, independently and more seriously, made the fixed 3000-point
-t_interp pass divide by near-zero dQ throughout a low-SOC battery's
-*entire* trace (not just a brief transient), since so little capacity
-remains to spread those points across -- see
-experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/RESULTS.md for both findings,
-confirmed directly against the raw data before each fix.
-"""
+"""Single-pass SPM discharge simulations with deterministic resumable jobs."""
 import os
-import pybamm
-import pandas as pd
-import numpy as np
+for _name in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS'):
+    os.environ[_name] = '1'
+os.environ.setdefault('PYBAMM_DISABLE_TELEMETRY', 'true')
+
+import json
+import multiprocessing
 import random
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+from concurrent.futures import ProcessPoolExecutor
+from functools import lru_cache
 
-random.seed(42)
-np.random.seed(42)
+import numpy as np
+import polars as pl
+import pybamm
 
-SOC_RANGE_MIN = float(os.environ.get("SOC_RANGE_MIN", 0.5))
-SOC_RANGE_MAX = float(os.environ.get("SOC_RANGE_MAX", 1.0))
-SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
-SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))
-C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.1))
-C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 0.2))
-DIFFUSIVITY_FACTOR = float(os.environ.get("DIFFUSIVITY_FACTOR", 10))
-LFP_OCP_RATE_CONSTANT = float(os.environ.get("LFP_OCP_RATE_CONSTANT", -3))
-
-DATA_DIR = os.environ.get("DATA_DIR", "data")
-#RUN_LABEL = os.environ.get("RUN_LABEL", "test_1") använd om man vill
-#RUN_DIR = os.path.join(DATA_DIR, RUN_LABEL)
-RUN_DIR = os.path.join(DATA_DIR)
+from workflow import DATA, SYNTH_RAW, atomic_json, atomic_parquet, export_csv, fingerprint, path_setting
 
 
-OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))
-FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", os.path.join(RUN_DIR, "failures", "simulation_failures.csv"))
-DISCHARGE_PLOT_PNG = os.environ.get("DISCHARGE_PLOT_PNG", os.path.join(RUN_DIR, "plots", "continuous_discharge_plot.png"))
-
-for _output_path in (OUTPUT_DATA_CSV, FAILURE_LOG_CSV, DISCHARGE_PLOT_PNG):
-    os.makedirs(os.path.dirname(_output_path), exist_ok=True)
-
-model = pybamm.lithium_ion.SPM()
-
-param_lfp_base = pybamm.ParameterValues("Prada2013")
-# Mohtat2020 dropped: experiment 20 Part C found diffusivity tuning
-# doesn't fix its magnitude mismatch at all, unlike Chen2020/OKane2022.
-NMC_PARAMETER_SETS = ["Chen2020", "OKane2022"]
-param_nmc_bases = {name: pybamm.ParameterValues(name) for name in NMC_PARAMETER_SETS}
-param_nmc_base = param_nmc_bases["Chen2020"]
-
-LOWER_VOLTAGE_CUTOFF = {
-    "LFP": float(os.environ.get("LFP_LOWER_CUTOFF", 1.5)),
-    "NMC": float(os.environ.get("NMC_LOWER_CUTOFF", 1.5)),
-}
+def setting(name, default):
+    return float(os.environ.get(name, default))
 
 
-def apply_nmc_diffusivity_fix(param, factor):
-    """Reduce Positive particle diffusivity by `factor`. Chen2020 defines
-    it as a plain constant; OKane2022 defines it as a callable
-    (sto, T) -> value -- handle both."""
-    orig = param["Positive particle diffusivity [m2.s-1]"]
-    if callable(orig):
-        def scaled_diffusivity(sto, T, _orig=orig, _factor=factor):
-            return _orig(sto, T) / _factor
-        param["Positive particle diffusivity [m2.s-1]"] = scaled_diffusivity
-    else:
-        param["Positive particle diffusivity [m2.s-1]"] = orig / factor
-    return param
+def make_jobs():
+    rng = random.Random(42)
+    count = int(os.environ.get('VARIATIONS_PER_SIZE', 83))
+    if count < 1:
+        raise ValueError('VARIATIONS_PER_SIZE must be positive')
+    ranges = {name: (setting(f'{name}_MIN', low), setting(f'{name}_MAX', high)) for name, low, high in
+              [('SOC_RANGE', 0.5, 1.0), ('SOH', 0.8, 1.0), ('C_RATE', 0.1, 0.2)]}
+    if any(low <= 0 or low > high for low, high in ranges.values()) or ranges['SOC_RANGE'][1] > 1:
+        raise ValueError('Invalid SOC, SOH, or C-rate range')
+    jobs = []
+    for size_idx, target in enumerate([1.2, 2.0, 3.5]):
+        for i in range(count):
+            soc, soh, c_rate = [rng.uniform(*ranges[name]) for name in ('SOC_RANGE', 'SOH', 'C_RATE')]
+            ambient = rng.uniform(15, 35)
+            nmc_set = rng.choice(['Chen2020', 'OKane2022'])
+            resistance = {chem: min(1., max(.3, soh * rng.uniform(.8, 1.2) * (1 + .02 * (ambient - 25))))
+                          for chem in ('LFP', 'NMC')}
+            for chem in ('LFP', 'NMC'):
+                jobs.append({'chem': chem, 'target': target, 'soc': soc, 'soh': soh, 'c_rate': c_rate,
+                             'ambient': ambient, 'variation': size_idx * count + i,
+                             'parameter_set': nmc_set if chem == 'NMC' else 'Prada2013',
+                             'resistance': resistance[chem], 'cutoff': setting(f'{chem}_LOWER_CUTOFF', 1.5),
+                             'diffusivity': setting('DIFFUSIVITY_FACTOR', 10), 'ocp_rate': setting('LFP_OCP_RATE_CONSTANT', -3)})
+    for job, seed in zip(jobs, np.random.SeedSequence(42).spawn(len(jobs))):
+        job['seed'] = int(seed.generate_state(1)[0])
+    return jobs
 
 
-def make_lfp_ocp(rate_constant):
-    """Same functional form as Afshar2017's LFP_ocp_Afshar2017, with the
-    tail rate constant (-30 originally) replaced by `rate_constant`. An
-    explicit empirical calibration -- see experiment 21's docstring."""
-    def lfp_ocp_softened(sto):
-        c1 = -150 * sto
-        c2 = rate_constant * (1 - sto)
-        k = 3.4077 - 0.020269 * sto + 0.5 * np.exp(c1) - 0.9 * np.exp(c2)
-        return k
-    return lfp_ocp_softened
+@lru_cache(maxsize=3)
+def base_parameters(name):
+    return pybamm.ParameterValues(name)
 
 
-def apply_lfp_ocp_fix(param, rate_constant):
-    param["Positive electrode OCP [V]"] = make_lfp_ocp(rate_constant)
-    return param
-
-
-def make_continuous_discharge_experiment(current_a, v_min):
-    """Build a single continuous constant-current discharge, no rests."""
-    return pybamm.Experiment([f"Discharge at {current_a:.4f} A until {v_min} V"])
-
-
-FAILURE_LOG = []
-
-
-def solve_with_cutoff(sim, initial_soc, chem, context=""):
-    """Solve an experiment; keep partial results if the voltage cut-off is hit.
-    Any solve failure is logged.
-    """
+def solve_job(task):
+    job, folder = task
+    chem = job['chem']
+    job_id = f'{chem}-{job["variation"]:05d}'
+    part = folder / f'{job_id}.parquet'
+    marker = folder / f'{job_id}.json'
     try:
-        sol = sim.solve(initial_soc=initial_soc)
-    except pybamm.SolverError as err:
-        sol = getattr(sim, "solution", None)
-        recovered = sol is not None and len(sol.t) > 0
-        print(f"  {chem}{context}: solver stopped early [SolverError] "
-              f"({'partial data kept' if recovered else 'no data'}) ({err})")
-        FAILURE_LOG.append({
-            "Chemistry": chem, "Context": context,
-            "ExceptionType": "SolverError", "Message": str(err), "Recovered": recovered,
-        })
-        if not recovered:
-            return None
-    except Exception as err:
-        print(f"  {chem}{context}: solve failed [{type(err).__name__}] ({err})")
-        FAILURE_LOG.append({
-            "Chemistry": chem, "Context": context,
-            "ExceptionType": type(err).__name__, "Message": str(err), "Recovered": False,
-        })
-        return None
-
-    termination = getattr(sol, "termination", None)
-    if termination and termination != "final time":
-        print(f"  {chem}: terminated early ({termination})")
-
-    return sol
-
-
-T_INTERP_N_POINTS_FULL = 3000  # calibrated for a full-range (Initial_SOC~1.0) discharge
-T_INTERP_MIN_POINTS = 100  # floor so a very-low-SOC battery still gets enough points
-T_INTERP_SAFETY_FRACTION = 1 - 1e-6  # verified safe in experiments 18/20/21 -- do not widen this margin
-
-
-def solve_dense(param, discharge_experiment, initial_soc, chem, context=""):
-    """Solve twice and splice, as validated in experiments 18/20/21.
-
-    T_interp point count scales with `initial_soc` (experiment 26 fix):
-    a fixed 3000 points was calibrated assuming a battery discharges its
-    full usable capacity. A battery starting at, say, Initial_SOC=0.05
-    only has ~5% as much capacity left to discharge, so spreading the
-    same 3000 points across that much smaller capacity range made each
-    t_interp step's dQ tiny enough that ordinary solver-precision noise
-    in voltage got divided into wild, non-physical dV/dQ swings
-    *throughout the entire trace* -- not a brief settling transient, and
-    not fixed by adding more battery variations (both confirmed directly
-    against real data this experiment; see
-    experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/RESULTS.md). Scaling point
-    count with initial_soc keeps each step's dQ magnitude comparable to
-    what a full-range discharge produces, regardless of how little
-    capacity a given battery starts with.
-    """
-    n_points = max(T_INTERP_MIN_POINTS, round(T_INTERP_N_POINTS_FULL * initial_soc))
-
-    sim1 = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
-    sol1 = solve_with_cutoff(sim1, initial_soc, chem, context=context)
-    if sol1 is None:
-        return None
-
-    time_default = sol1["Time [s]"].entries
-    voltage_default = sol1["Terminal voltage [V]"].entries
-    capacity_default = sol1["Discharge capacity [A.h]"].entries
-    if len(time_default) < 5:
-        return time_default, voltage_default, capacity_default
-
-    tf = time_default[-1]
-    t_bound = tf * T_INTERP_SAFETY_FRACTION
-
-    try:
-        sim2 = pybamm.Simulation(model, parameter_values=param, experiment=discharge_experiment)
-        t_interp = np.linspace(0, t_bound, n_points)
-        sol2 = sim2.solve(initial_soc=initial_soc, t_interp=t_interp)
-    except Exception as err:
-        print(f"  {chem}{context}: t_interp dense pass failed ({type(err).__name__}: {err}) -- "
-              f"falling back to default-density output for this battery.")
-        return time_default, voltage_default, capacity_default
-
-    time_dense = sol2["Time [s]"].entries
-    voltage_dense = sol2["Terminal voltage [V]"].entries
-    capacity_dense = sol2["Discharge capacity [A.h]"].entries
-
-    after_mask = time_default > time_dense[-1]
-    time_spliced = np.concatenate([time_dense, time_default[after_mask]])
-    voltage_spliced = np.concatenate([voltage_dense, voltage_default[after_mask]])
-    capacity_spliced = np.concatenate([capacity_dense, capacity_default[after_mask]])
-
-    order = np.argsort(time_spliced, kind="stable")
-    return time_spliced[order], voltage_spliced[order], capacity_spliced[order]
+        param = base_parameters(job['parameter_set']).copy()
+        base = base_parameters('Prada2013' if chem == 'LFP' else 'Chen2020')
+        mult = job['target'] / base['Nominal cell capacity [A.h]']
+        if chem == 'LFP':
+            rate = job['ocp_rate']
+            param['Positive electrode OCP [V]'] = lambda sto: 3.4077 - .020269 * sto + .5 * np.exp(-150 * sto) - .9 * np.exp(rate * (1 - sto))
+        else:
+            original = param['Positive particle diffusivity [m2.s-1]']
+            factor = job['diffusivity']
+            param['Positive particle diffusivity [m2.s-1]'] = ((lambda sto, temp: original(sto, temp) / factor)
+                                                              if callable(original) else original / factor)
+        for electrode in ('negative', 'positive'):
+            title = electrode.title()
+            param[f'{title} electrode thickness [m]'] *= mult
+            param[f'Maximum concentration in {electrode} electrode [mol.m-3]'] *= job['soh']
+            param[f'Initial concentration in {electrode} electrode [mol.m-3]'] *= job['soh']
+            param[f'{title} electrode conductivity [S.m-1]'] *= job['resistance']
+        current = job['c_rate'] * job['target']
+        experiment = pybamm.Experiment([f'Discharge at {current:.4f} A until {job["cutoff"]} V'])
+        n_points = max(100, round(3000 * job['soc']))
+        spacing = (3600 * job['soc'] / job['c_rate']) / (n_points - 1)
+        horizon = experiment.steps[0].duration
+        times = np.arange(0, horizon, spacing)
+        times = np.r_[times, horizon]
+        solver = pybamm.IDAKLUSolver(options={'num_threads': 1})
+        sim = pybamm.Simulation(pybamm.lithium_ion.SPM(), parameter_values=param, experiment=experiment, solver=solver)
+        sol = sim.solve(initial_soc=job['soc'], t_interp=times)
+        t = sol['Time [s]'].entries
+        v = sol['Terminal voltage [V]'].entries
+        q = sol['Discharge capacity [A.h]'].entries
+        if len(t) < 15 or not np.isfinite(np.column_stack([t, v, q])).all():
+            raise ValueError('Simulation did not produce a usable finite trace')
+        if sol.termination == 'final time':
+            raise ValueError('Experiment horizon reached before the voltage cutoff')
+        noise = np.random.default_rng(job['seed']).normal(0, .001, len(t))
+        metadata = {'Chemistry': chem, 'DataKind': 'synthetic', 'Cell_ID': job_id,
+                    'Variation_ID': str(job['variation']), 'Target_Capacity_Ah': job['target'],
+                    'C_Rate': round(job['c_rate'], 4), 'Size_Multiplier': mult, 'SOH': round(job['soh'], 3),
+                    'Initial_SOC': round(job['soc'], 3), 'Ambient_Temperature_C': round(job['ambient'], 2),
+                    'Resistance_Factor': round(job['resistance'], 4), 'Base_Parameter_Set': job['parameter_set'],
+                    'V_min [V]': job['cutoff']}
+        frame = pl.DataFrame({'Time [s]': t, 'Voltage [V]': v + noise, 'Capacity [A.h]': q}).with_columns(
+            [pl.lit(value).alias(name) for name, value in metadata.items()])
+        atomic_parquet(frame, part)
+        result = {'job': job_id, 'rows': len(t), 'part': part.name, 'termination': sol.termination, 'status': 'complete'}
+        atomic_json(marker, result)
+        return result
+    except Exception as exc:
+        return {'job': job_id, 'rows': 0, 'status': 'failed', 'error': f'{type(exc).__name__}: {exc}'}
 
 
-CAPACITY_TARGETS_AH = [1.2, 2.0, 3.5]
+def plot_dataset(parts):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(12, 6))
+    labeled = set()
+    for part in parts:
+        frame = pl.read_parquet(part)
+        chem = frame['Chemistry'][0]
+        ax.plot(frame['Time [s]'].to_numpy() / 3600, frame['Voltage [V]'].to_numpy(),
+                color='#1f77b4' if chem == 'LFP' else '#ff7f0e', alpha=.15, linewidth=.8,
+                label=chem if chem not in labeled else None)
+        labeled.add(chem)
+    ax.set(xlabel='Time [Hours]', ylabel='Voltage [V]', title='Simulated continuous discharge profiles')
+    ax.legend()
+    ax.grid(True)
+    target = path_setting('DISCHARGE_PLOT_PNG', DATA / 'plots' / 'continuous_discharge_plot.png')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(target, dpi=150)
+    plt.close(fig)
 
 
-def capacity_multipliers_for(base_params, targets_ah):
-    base_capacity_ah = base_params["Nominal cell capacity [A.h]"]
-    return [target_ah / base_capacity_ah for target_ah in targets_ah]
+def main():
+    jobs = make_jobs()
+    key = fingerprint(settings=jobs)
+    folder = SYNTH_RAW / 'parts' / key
+    folder.mkdir(parents=True, exist_ok=True)
+    pending, results = [], []
+    for job in jobs:
+        stem = f'{job["chem"]}-{job["variation"]:05d}'
+        marker = folder / f'{stem}.json'
+        if os.environ.get('USE_CACHE', '1') != '0' and marker.exists() and (folder / f'{stem}.parquet').exists():
+            results.append(json.loads(marker.read_text()) | {'cached': True})
+        else:
+            pending.append((job, folder))
+    workers = int(os.environ.get('SIM_WORKERS', min(4, os.cpu_count() or 1)))
+    if workers < 1:
+        raise ValueError('SIM_WORKERS must be positive')
+    if workers == 1:
+        for task in pending:
+            result = solve_job(task)
+            results.append(result)
+            print(json.dumps(result), flush=True)
+    elif pending:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn')) as pool:
+            for result in pool.map(solve_job, pending):
+                results.append(result)
+                print(json.dumps(result), flush=True)
+    results.sort(key=lambda r: r['job'])
+    failures = [r for r in results if r['status'] != 'complete']
+    complete = [r for r in results if r['status'] == 'complete']
+    manifest = {'parts': [str((folder / r['part']).relative_to(SYNTH_RAW)) for r in complete],
+                'rows': sum(r['rows'] for r in complete), 'variants': len(complete), 'attempts': len(jobs),
+                'failures': failures, 'jobs': results, 'workers': workers}
+    atomic_json(SYNTH_RAW / 'manifest.json', manifest)
+    failure_path = path_setting('FAILURE_LOG_CSV', DATA / 'failures' / 'simulation_failures.csv')
+    failure_path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(failures, schema={'job': pl.String, 'rows': pl.Int64, 'status': pl.String, 'error': pl.String}).write_csv(failure_path)
+    if not complete:
+        raise RuntimeError('Every simulation failed; inspect the failure log')
+    if os.environ.get('OUTPUT_DATA_CSV') or os.environ.get('EXPORT_CSV') == '1':
+        export_csv(SYNTH_RAW, path_setting('OUTPUT_DATA_CSV', SYNTH_RAW.with_suffix('.csv')))
+    plot_dataset([SYNTH_RAW / p for p in manifest['parts']])
+    print(f'{len(complete)}/{len(jobs)} traces completed; {len(failures)} failures; {len(results) - len(pending)} cached', flush=True)
 
 
-capacity_multipliers = {
-    "LFP": capacity_multipliers_for(param_lfp_base, CAPACITY_TARGETS_AH),
-    "NMC": capacity_multipliers_for(param_nmc_base, CAPACITY_TARGETS_AH),
-}
-
-variations_per_size = int(os.environ.get("VARIATIONS_PER_SIZE", 83))
-
-all_data = []
-
-print(f"Starting continuous-discharge simulations (SOH sampled {SOH_MIN}-{SOH_MAX} per battery, "
-      f"C-rate {C_RATE_MIN}-{C_RATE_MAX}, cutoffs LFP={LOWER_VOLTAGE_CUTOFF['LFP']}V/NMC={LOWER_VOLTAGE_CUTOFF['NMC']}V, "
-      f"NMC parameter sets {NMC_PARAMETER_SETS} (Mohtat2020 dropped) with diffusivity/{DIFFUSIVITY_FACTOR}, "
-      f"LFP OCP tail rate constant softened to {LFP_OCP_RATE_CONSTANT})...")
-
-for size_idx, target_ah in enumerate(CAPACITY_TARGETS_AH):
-    for i in range(variations_per_size):
-        soc = random.uniform(SOC_RANGE_MIN, SOC_RANGE_MAX)
-        soh = random.uniform(SOH_MIN, SOH_MAX)
-        c_rate = random.uniform(C_RATE_MIN, C_RATE_MAX)
-
-        ambient_c = random.uniform(15.0, 35.0)
-        TEMP_RESISTANCE_COEFF = 0.02
-        temp_conductivity_multiplier = 1.0 + TEMP_RESISTANCE_COEFF * (ambient_c - 25.0)
-
-        variation_id = size_idx * variations_per_size + i
-
-        nmc_set_name = random.choice(NMC_PARAMETER_SETS)
-
-        print(f"\n--- Target size: {target_ah} Ah | Variation {i+1}/{variations_per_size} | "
-              f"C-rate: {c_rate:.3f} | SOC: {soc:.2f} | SOH: {soh:.3f} | Ambient: {ambient_c:.1f}C | NMC set: {nmc_set_name} ---")
-
-        param_lfp = param_lfp_base.copy()
-        param_lfp = apply_lfp_ocp_fix(param_lfp, LFP_OCP_RATE_CONSTANT)
-        param_nmc = param_nmc_bases[nmc_set_name].copy()
-        param_nmc = apply_nmc_diffusivity_fix(param_nmc, DIFFUSIVITY_FACTOR)
-
-        chemistries = {
-            "LFP": param_lfp,
-            "NMC": param_nmc,
-        }
-
-        resistance_factors = {}
-        for chem, param in chemistries.items():
-            mult = capacity_multipliers[chem][size_idx]
-            param["Negative electrode thickness [m]"] *= mult
-            param["Positive electrode thickness [m]"] *= mult
-
-            # SOH-scaling fix (experiment 20 Part A): scale BOTH Maximum
-            # AND Initial concentration by the same factor.
-            param["Maximum concentration in negative electrode [mol.m-3]"] *= soh
-            param["Maximum concentration in positive electrode [mol.m-3]"] *= soh
-            param["Initial concentration in negative electrode [mol.m-3]"] *= soh
-            param["Initial concentration in positive electrode [mol.m-3]"] *= soh
-
-            resistance_noise = random.uniform(0.8, 1.2)
-            resistance_factor = min(1.0, max(0.3, soh * resistance_noise * temp_conductivity_multiplier))
-            resistance_factors[chem] = resistance_factor
-            param["Negative electrode conductivity [S.m-1]"] *= resistance_factor
-            param["Positive electrode conductivity [S.m-1]"] *= resistance_factor
-
-        for chem, param in chemistries.items():
-            v_min = LOWER_VOLTAGE_CUTOFF[chem]
-            current_a = c_rate * target_ah
-            discharge_experiment = make_continuous_discharge_experiment(current_a, v_min)
-
-            print(f"Solving {chem} (I={current_a:.4f} A / {c_rate:.3f}C, Vmin={v_min} V, dense t_interp output)...")
-            context = f" [target={target_ah}Ah, variation={i+1}/{variations_per_size}, SOH={soh:.3f}, C-rate={c_rate:.3f}]"
-            dense = solve_dense(param, discharge_experiment, soc, chem, context=context)
-            if dense is None:
-                print(f"  Skipping {chem}: no solution data.")
-                continue
-            time_arr, voltage_arr, capacity_arr = dense
-
-            raw_voltage = voltage_arr
-            noise = np.random.normal(0, 0.001, len(raw_voltage))
-            voltage_with_noise = raw_voltage + noise
-
-            df = pd.DataFrame({
-                "Time [s]": time_arr,
-                "Voltage [V]": voltage_with_noise,
-                "Capacity [A.h]": capacity_arr,
-                "Chemistry": chem,
-                "Target_Capacity_Ah": target_ah,
-                "C_Rate": round(c_rate, 4),
-                "Size_Multiplier": capacity_multipliers[chem][size_idx],
-                "SOH": round(soh, 3),
-                "Initial_SOC": round(soc, 3),
-                "Ambient_Temperature_C": round(ambient_c, 2),
-                "Resistance_Factor": round(resistance_factors[chem], 4),
-                "Base_Parameter_Set": nmc_set_name if chem == "NMC" else "Prada2013",
-                "V_min [V]": v_min,
-                "Variation_ID": variation_id,
-            })
-            all_data.append(df)
-
-# Combine and save
-if all_data:
-    training_data = pd.concat(all_data, ignore_index=True)
-    training_data.to_csv(OUTPUT_DATA_CSV, index=False)
-    print(f"\nDone! SOH-range LFP-OCP-tuned + NMC-diffusivity-tuned data saved to '{OUTPUT_DATA_CSV}'")
-else:
-    training_data = pd.DataFrame()
-    print("\nNo data generated: every solve attempt failed.")
-
-# --- FAILURE SUMMARY ---
-total_attempts = len(CAPACITY_TARGETS_AH) * variations_per_size * len(LOWER_VOLTAGE_CUTOFF)
-print(f"\n{len(FAILURE_LOG)} of {total_attempts} solve attempts failed.")
-if FAILURE_LOG:
-    failures_df = pd.DataFrame(FAILURE_LOG)
-    print(failures_df["ExceptionType"].value_counts().to_string())
-    failures_df.to_csv(FAILURE_LOG_CSV, index=False)
-    print(f"Full failure log saved to '{FAILURE_LOG_CSV}'")
-
-# --- PLOTTING ---
-if not training_data.empty:
-    print("Generating continuous discharge plot...")
-    plt.figure(figsize=(12, 6))
-    lfp_labeled, nmc_labeled = False, False
-    for (chem, var_id), run_df in training_data.groupby(["Chemistry", "Variation_ID"]):
-        color = '#1f77b4' if chem == "LFP" else '#ff7f0e'
-        label = None
-        if chem == "LFP" and not lfp_labeled:
-            label, lfp_labeled = "LFP", True
-        elif chem == "NMC" and not nmc_labeled:
-            label, nmc_labeled = "NMC", True
-        plt.plot(run_df['Time [s]'] / 3600, run_df['Voltage [V]'], color=color, alpha=0.15, linewidth=0.8, label=label)
-
-    plt.title(f'Simulated Discharge Profiles (SOH {SOH_MIN}-{SOH_MAX}, NMC diffusivity/{DIFFUSIVITY_FACTOR}, LFP OCP rate={LFP_OCP_RATE_CONSTANT})')
-    plt.xlabel('Time [Hours]')
-    plt.ylabel('Voltage [V]')
-    plt.legend()
-    plt.grid(True)
-
-    plt.savefig(DISCHARGE_PLOT_PNG, dpi=150)
-    print(f"Plot saved to '{DISCHARGE_PLOT_PNG}'")
-    plt.close()
-else:
-    print("Plot skipped: no data generated.")
+if __name__ == '__main__':
+    main()

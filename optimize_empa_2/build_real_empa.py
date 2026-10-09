@@ -1,232 +1,150 @@
-"""
-EMPA RO-Crate builder with SOC sweep truncation.
-Extracts real cycles matching SOH_MIN <= SOH <= SOH_MAX, applies truncation across
-SOC_START_POINTS without target-zone restrictions, and outputs real_empa_raw.csv.
-"""
-import glob
+"""Build EMPA SOC variants as a resumable partitioned Parquet dataset."""
 import json
 import os
+from pathlib import Path
 
 import numpy as np
-import pandas as pd
+import polars as pl
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
-EMPA_DIR = os.path.join(PROJECT_DIR, "data", "Empa_dataset")
+from workflow import EMPA, REAL_RAW, SOC_START_POINTS, atomic_json, atomic_parquet, export_csv, fingerprint, path_setting
 
-SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
-SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))
-C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.0))
-C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 999.0))
-CURRENT_EPS_A = 5e-7
-MIN_SEGMENT_POINTS = 15
-BOL_WINDOW_CYCLES = 10
-MAX_SEGMENT_DURATION_HOURS = 24.0
-MIN_VOLTAGE_SPAN_V = 0.3
-RESCALE_TARGET_AH = 2.0
-N_RESAMPLE_POINTS = 80
-MIN_RAW_POINTS_AFTER_TRUNCATION = 5
-
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
-
-ACTIVE_MATERIAL_TO_CHEMISTRY = {
-    "LithiumIronPhosphateOxide": "LFP",
-    "LithiumNickelCobaltManganeseOxide": "NMC",
-}
-
-OUT_RAW_CSV = os.path.join(PROJECT_DIR, "data", "raw", "real_empa_raw.csv")
+SOH_MIN = float(os.environ.get('SOH_MIN', 0.8))
+SOH_MAX = float(os.environ.get('SOH_MAX', 1.0))
+C_RATE_MIN = float(os.environ.get('C_RATE_MIN', 0.0))
+C_RATE_MAX = float(os.environ.get('C_RATE_MAX', 999.0))
+CHEMISTRIES = {'LithiumIronPhosphateOxide': 'LFP', 'LithiumNickelCobaltManganeseOxide': 'NMC'}
+COLS = ['cycle_dimensionless', 'test_time_millisecond', 'current_ampere', 'voltage_volt', 'ambient_temperature_celsius']
 
 
-def get_chemistry(cell_dir, cell_id):
-    meta_path = os.path.join(cell_dir, f"{cell_id}.metadata.json")
-    with open(meta_path) as f:
-        meta = json.load(f)
+def get_chemistry(cell_dir, cell_id=None):
+    cell_dir = Path(cell_dir)
+    cell_id = cell_id or cell_dir.name
+    meta = json.loads((cell_dir / f'{cell_id}.metadata.json').read_text())
     try:
-        pos = meta["@graph"][0]["hasTestObject"]["hasPositiveElectrode"]
-        active_material = pos["hasCoating"]["hasActiveMaterial"]["rdfs:comment"]
-    except (KeyError, IndexError):
+        active = meta['@graph'][0]['hasTestObject']['hasPositiveElectrode']['hasCoating']['hasActiveMaterial']['rdfs:comment']
+        return CHEMISTRIES.get(active)
+    except (KeyError, IndexError, TypeError):
         return None
-    return ACTIVE_MATERIAL_TO_CHEMISTRY.get(active_material)
 
 
-def discharge_segments(df):
-    for cycle_number, cycle_df in df.groupby("cycle_dimensionless", sort=True):
-        cycle_df = cycle_df.sort_values("test_time_millisecond", kind="stable")
-        seg = cycle_df[cycle_df["current_ampere"] < -CURRENT_EPS_A]
-        if len(seg) < MIN_SEGMENT_POINTS:
-            continue
-        seg = seg.reset_index(drop=True)
-
-        duration_hours = (seg["test_time_millisecond"].iloc[-1] - seg["test_time_millisecond"].iloc[0]) / 3_600_000.0
-        voltage_span = seg["voltage_volt"].max() - seg["voltage_volt"].min()
-        if duration_hours > MAX_SEGMENT_DURATION_HOURS or voltage_span < MIN_VOLTAGE_SPAN_V:
-            continue
-
-        yield int(cycle_number), seg
+def selected_cells(directory=EMPA):
+    wanted = set(filter(None, os.environ.get('EMPA_CELL_IDS', '').split(',')))
+    return [p for p in sorted(Path(directory).glob('empa__ccid*'))
+            if p.is_dir() and (not wanted or p.name in wanted)]
 
 
-def segment_capacity_ah(seg):
-    t_hours = (seg["test_time_millisecond"] - seg["test_time_millisecond"].iloc[0]) / 3_600_000.0
-    i_abs = seg["current_ampere"].abs().values
-    cap = np.concatenate([[0.0], np.cumsum(
-        np.diff(t_hours.values) * (i_abs[:-1] + i_abs[1:]) / 2.0
-    )])
-    return t_hours.values * 3600.0, cap
+def capacity(time_ms, current):
+    seconds = (time_ms - time_ms[0]) / 1000.0
+    q = np.r_[0.0, np.cumsum(np.diff(seconds) * (np.abs(current[:-1]) + np.abs(current[1:])) / 7200)]
+    return seconds, q
 
 
-def resample_on_capacity(t_s, voltage, cap_ah, n_points=N_RESAMPLE_POINTS):
-    cap_grid = np.linspace(cap_ah[0], cap_ah[-1], n_points)
-    t_resampled = np.interp(cap_grid, cap_ah, t_s)
-    v_resampled = np.interp(cap_grid, cap_ah, voltage)
-    return t_resampled, v_resampled, cap_grid
-
-
-def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
-    total_capacity = cap_ah[-1]
-    cap_threshold = (1.0 - soc_start) * total_capacity
-
-    if cap_threshold <= 0:
-        t_kept, v_kept, cap_kept = t_s, voltage, cap_ah
-    else:
-        t_at_thresh = np.interp(cap_threshold, cap_ah, t_s)
-        v_at_thresh = np.interp(cap_threshold, cap_ah, voltage)
-        mask = cap_ah > cap_threshold
-        if mask.sum() < MIN_RAW_POINTS_AFTER_TRUNCATION - 1:
+def truncate_at_soc(t, v, q, soc):
+    threshold = (1 - soc) * q[-1]
+    if threshold > 0:
+        start = np.searchsorted(q, threshold, side='right')
+        if len(q) - start < 4:
             return None
-        t_kept = np.concatenate([[t_at_thresh], t_s[mask]])
-        v_kept = np.concatenate([[v_at_thresh], voltage[mask]])
-        cap_kept = np.concatenate([[cap_threshold], cap_ah[mask]])
-        t_kept = t_kept - t_kept[0]
-        cap_kept = cap_kept - cap_kept[0]
-
-    if len(t_kept) < MIN_RAW_POINTS_AFTER_TRUNCATION:
+        t = np.r_[np.interp(threshold, q, t), t[start:]]
+        v = np.r_[np.interp(threshold, q, v), v[start:]]
+        q = np.r_[threshold, q[start:]]
+        t, q = t - t[0], q - q[0]
+    if len(t) < 5 or v.min() >= 3.0:
         return None
-
-    # --- ADD IT HERE ---
-    if v_kept.min() >= 3.0:
-        return None  # discards shallow discharges that never dip below 3.0V
-    # -------------------
-
-    return t_kept, v_kept, cap_kept
+    return t, v, q
 
 
-def process_cell(cell_dir):
-    cell_id = os.path.basename(cell_dir)
-    chemistry = get_chemistry(cell_dir, cell_id)
+def process_cell(cell_dir, output=REAL_RAW, cache=True):
+    cell_dir, output = Path(cell_dir), Path(output)
+    cell_id = cell_dir.name
+    chemistry = get_chemistry(cell_dir)
     if chemistry is None:
-        return None, f"{cell_id}: unrecognized/missing chemistry, skipped"
+        return {'cell': cell_id, 'parts': [], 'rows': 0, 'variants': 0, 'skipped': 'chemistry'}
+    source = cell_dir / f'{cell_id}.bdf.parquet'
+    key = fingerprint([source, cell_dir / f'{cell_id}.metadata.json'],
+                      {'soh': [SOH_MIN, SOH_MAX], 'c_rate': [C_RATE_MIN, C_RATE_MAX], 'soc': SOC_START_POINTS})
+    folder = output / 'parts' / f'{cell_id}-{key}'
+    marker = folder / 'complete.json'
+    if cache and marker.exists():
+        result = json.loads(marker.read_text())
+        if all((output / part).exists() for part in result['parts']):
+            return result | {'cached': True}
+    frame = (pl.scan_parquet(source).select(COLS)
+             .filter(pl.col('cycle_dimensionless').is_not_null() & (pl.col('current_ampere') < -5e-7))
+             .sort(['cycle_dimensionless', 'test_time_millisecond'], maintain_order=True).collect())
+    arr = frame.select(pl.all().cast(pl.Float64)).to_numpy()
+    segments = []
+    if len(arr):
+        boundaries = np.r_[0, np.flatnonzero(np.diff(arr[:, 0]) != 0) + 1, len(arr)]
+        for start, end in zip(boundaries[:-1], boundaries[1:]):
+            seg = arr[start:end]
+            if len(seg) >= 15 and (seg[-1, 1] - seg[0, 1]) <= 86_400_000 and np.ptp(seg[:, 3]) >= 0.3:
+                segments.append((int(seg[0, 0]), start, end))
+    early = [s for s in segments if s[0] < 10] or segments[:10]
+    bol = max((capacity(arr[a:b, 1], arr[a:b, 2])[1][-1] for _, a, b in early), default=0)
+    result = {'cell': cell_id, 'chemistry': chemistry, 'parts': [], 'rows': 0, 'variants': 0,
+              'cycles_scanned': len(segments), 'cycles_matched': 0, 'bol_ah': float(bol)}
+    chunks = []
 
-    parquet_path = os.path.join(cell_dir, f"{cell_id}.bdf.parquet")
-    cols = ["test_time_millisecond", "current_ampere", "voltage_volt",
-            "cycle_dimensionless", "ambient_temperature_celsius"]
-    df = pd.read_parquet(parquet_path, columns=cols)
-    for c in ("test_time_millisecond", "current_ampere", "voltage_volt", "ambient_temperature_celsius"):
-        df[c] = df[c].astype("float32")
+    def flush():
+        if not chunks:
+            return
+        columns = {name: np.concatenate([chunk[name] for chunk in chunks]) for name in chunks[0]}
+        part = folder / f'{len(result["parts"]):05d}.parquet'
+        atomic_parquet(pl.DataFrame(columns), part)
+        result['parts'].append(str(part.relative_to(output)))
+        chunks.clear()
 
-    segments = list(discharge_segments(df))
-    if not segments:
-        return None, f"{cell_id}: no valid discharge segments"
-
-    early = [(n, seg) for n, seg in segments if n < BOL_WINDOW_CYCLES]
-    if not early:
-        early = segments[:BOL_WINDOW_CYCLES]
-    bol_capacity = 0.0
-    for _, seg in early:
-        _, cap = segment_capacity_ah(seg)
-        bol_capacity = max(bol_capacity, cap[-1])
-    if bol_capacity <= 0:
-        return None, f"{cell_id}: could not establish BOL capacity"
-
-    rows = []
-    n_cycles_matched = 0
-    n_variants = 0
-    variant_counts_by_soc = {s: 0 for s in SOC_START_POINTS}
-
-    for cycle_number, seg in segments:
-        t_s, cap_ah = segment_capacity_ah(seg)
-        capacity = cap_ah[-1]
-        if capacity <= 0:
-            continue
-        soh = capacity / bol_capacity
-        mean_current_a = seg["current_ampere"].abs().mean()
-        c_rate = mean_current_a / bol_capacity
-
-        if not (SOH_MIN <= soh <= SOH_MAX):
-            continue
-        if not (C_RATE_MIN <= c_rate <= C_RATE_MAX):
-            continue
-
-        n_cycles_matched += 1
-        voltage = seg["voltage_volt"].values
-        ambient_t = float(seg["ambient_temperature_celsius"].mean())
-
-        for s in SOC_START_POINTS:
-            truncated = truncate_at_soc(t_s, voltage, cap_ah, s)
-            if truncated is None:
+    if bol > 0:
+        for cycle, start, end in segments:
+            seg = arr[start:end]
+            t, q = capacity(seg[:, 1], seg[:, 2])
+            soh, c_rate = q[-1] / bol, np.abs(seg[:, 2]).mean() / bol
+            if not (SOH_MIN <= soh <= SOH_MAX and C_RATE_MIN <= c_rate <= C_RATE_MAX):
                 continue
-            t_trunc, v_trunc, cap_trunc = truncated
-
-            cap_trunc_rescaled = cap_trunc / bol_capacity * RESCALE_TARGET_AH
-            t_rs, v_rs, cap_rs = resample_on_capacity(t_trunc, v_trunc, cap_trunc_rescaled)
-
-            n_variants += 1
-            variant_counts_by_soc[s] += 1
-            rows.append(pd.DataFrame({
-                "Time [s]": t_rs,
-                "Voltage [V]": v_rs,
-                "Capacity [A.h]": cap_rs,
-                "Chemistry": chemistry,
-                "Variation_ID": f"{cell_id}_cycle_{cycle_number}_soc_{s}",
-                "Target_Capacity_Ah": RESCALE_TARGET_AH,
-                "Real_BOL_Capacity_mAh": bol_capacity * 1000,
-                "Size_Multiplier": 0.0,
-                "SOH": round(float(soh), 4),
-                "Initial_SOC": s,
-                "Ambient_Temperature_C": ambient_t,
-            }))
-
-    status = (f"{cell_id} ({chemistry}): BOL={bol_capacity * 1000:.3f} mAh, "
-              f"{len(segments)} discharge cycles scanned, {n_cycles_matched} cycles in "
-              f"[{SOH_MIN}, {SOH_MAX}] & C-rate [{C_RATE_MIN}, {C_RATE_MAX}], "
-              f"{n_variants} SOC variants kept")
-    if not rows:
-        return None, status
-    return pd.concat(rows, ignore_index=True), status
+            result['cycles_matched'] += 1
+            for soc in SOC_START_POINTS:
+                truncated = truncate_at_soc(t, seg[:, 3], q, soc)
+                if truncated is None:
+                    continue
+                tt, vv, qq = truncated
+                qq = qq / bol * 2.0
+                grid = np.linspace(qq[0], qq[-1], 80)
+                metadata = {'Chemistry': chemistry, 'Variation_ID': f'{cell_id}_cycle_{cycle}_soc_{soc}',
+                            'Cell_ID': cell_id, 'Cycle': cycle, 'DataKind': 'real',
+                            'Target_Capacity_Ah': 2.0, 'Real_BOL_Capacity_mAh': bol * 1000,
+                            'Size_Multiplier': 0.0, 'SOH': round(float(soh), 4), 'Initial_SOC': soc,
+                            'Ambient_Temperature_C': float(np.nanmean(seg[:, 4]))}
+                chunk = {name: np.full(80, value) for name, value in metadata.items()}
+                chunk.update({'Time [s]': np.interp(grid, qq, tt), 'Voltage [V]': np.interp(grid, qq, vv), 'Capacity [A.h]': grid})
+                chunks.append(chunk)
+                result['variants'] += 1
+                result['rows'] += 80
+                if len(chunks) >= 512:
+                    flush()
+    flush()
+    atomic_json(marker, result)
+    return result
 
 
 def main():
-    cell_dirs = sorted(d for d in glob.glob(os.path.join(EMPA_DIR, "empa__ccid*")) if os.path.isdir(d))
-    print(f"Found {len(cell_dirs)} cell directories in '{EMPA_DIR}'")
-    print(f"Target: SOH in [{SOH_MIN}, {SOH_MAX}], C-rate [{C_RATE_MIN}, {C_RATE_MAX}]\n")
-
-    all_rows = []
-    n_lfp_cells = n_nmc_cells = 0
-    for i, cell_dir in enumerate(cell_dirs, 1):
-        out, status = process_cell(cell_dir)
-        print(f"[{i}/{len(cell_dirs)}] {status}")
-        if out is not None:
-            all_rows.append(out)
-            if out["Chemistry"].iloc[0] == "LFP":
-                n_lfp_cells += 1
-            else:
-                n_nmc_cells += 1
-
-    if not all_rows:
-        print("\nNo matching cycles found anywhere -- widen SOH_MIN/SOH_MAX or the C-rate window.")
-        return
-
-    combined = pd.concat(all_rows, ignore_index=True)
-    os.makedirs(os.path.dirname(OUT_RAW_CSV), exist_ok=True)
-    combined.to_csv(OUT_RAW_CSV, index=False)
-
-    n_variations = combined["Variation_ID"].nunique()
-    print(f"\n{'=' * 70}")
-    print(f"-> {OUT_RAW_CSV}")
-    print(f"   {n_variations} real discharge cycles kept "
-          f"({n_lfp_cells} LFP cells, {n_nmc_cells} NMC cells contributing), "
-          f"{len(combined)} rows")
-    print(combined.groupby("Chemistry")["Variation_ID"].nunique())
+    cells = selected_cells()
+    if not cells:
+        raise FileNotFoundError(f'No EMPA cells in {EMPA}')
+    results = []
+    for i, cell in enumerate(cells, 1):
+        result = process_cell(cell, cache=os.environ.get('USE_CACHE', '1') != '0')
+        results.append(result)
+        print(f'[{i}/{len(cells)}] {cell.name}: {result["variants"]} variants, cached={result.get("cached", False)}', flush=True)
+    manifest = {'parts': [p for result in results for p in result['parts']], 'cells': results,
+                'rows': sum(r['rows'] for r in results), 'variants': sum(r['variants'] for r in results)}
+    if not manifest['parts']:
+        raise ValueError('No matching EMPA traces')
+    atomic_json(REAL_RAW / 'manifest.json', manifest)
+    if os.environ.get('REAL_RAW_CSV') or os.environ.get('EXPORT_CSV') == '1':
+        export_csv(REAL_RAW, path_setting('REAL_RAW_CSV', REAL_RAW.with_suffix('.csv')))
+    print(json.dumps({k: v for k, v in manifest.items() if k not in ('parts', 'cells')}), flush=True)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

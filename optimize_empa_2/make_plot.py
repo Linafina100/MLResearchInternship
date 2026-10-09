@@ -1,15 +1,15 @@
 import json
 import os
+from workflow import SOC_START_POINTS, path_setting
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULTS_JSON = os.path.join(SCRIPT_DIR, "sweep_results.json")
+RESULTS_JSON = path_setting("RESULTS_JSON", os.path.join(SCRIPT_DIR, "sweep_results.json"))
 OUT_PNG = os.path.join(SCRIPT_DIR, "plots", "soc_sweep_accuracy_empa.png")
 
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
 # EMPA styling configuration
 EMPA_COLOR = "#2A78D6"
@@ -52,7 +52,7 @@ def main():
     ax.set_xlabel("Initial SOC (fraction of cell's capacity remaining)")
     ax.set_ylabel("Balanced accuracy (%)")
     ax.set_title("EMPA Sim-to-Real Accuracy vs. Initial SOC\n"
-                 "(Continuous-discharge-truncated synthetic training, all voltage bins)")
+                 "(Synthetic training, training-selected voltage bins)")
     ax.set_xlim(1.05, 0.0)  # Descending: full charge (left) -> near-empty (right)
     ax.set_ylim(0, 105)
     ax.grid(True, alpha=0.3)
