@@ -40,9 +40,126 @@ REAL_RAW_DIR = os.path.join(PROJECT_DIR, "data", "raw")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 
+def create_features_by_capacity_fraction(raw_csv_path, n_bins=100):
+    """
+    Resamplar varje battericykel till ett fast antal punkter (n_bins) 
+    baserat på dess egna relativa kapacitetsförlopp (0 till 1).
+    Fungerar perfekt för korta/trunkerade cyklar vid låg SOC!
+    """
+    df = pd.read_csv(raw_csv_path, low_memory=False)
+    
+    group_cols = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
+    feature_rows = []
+    
+    for keys, group in df.groupby(group_cols):
+        group = group.sort_values('Time [s]')
+        
+        voltage = group['Voltage [V]'].values
+        capacity = group['Capacity [A.h]'].values if 'Capacity [A.h]' in group.columns else group['Time [s]'].values
+        
+        if len(voltage) < 5:
+            continue
+            
+        cap_min = capacity[0]
+        cap_max = capacity[-1]
+        
+        if cap_max == cap_min:
+            continue
+            
+        cap_normalized = (capacity - cap_min) / (cap_max - cap_min)
+        target_grid = np.linspace(0.0, 1.0, n_bins)
+        resampled_voltage = np.interp(target_grid, cap_normalized, voltage)
+        
+        row_dict = {
+            'Chemistry': keys[0],
+            'Size_Multiplier': keys[1],
+            'SOH': keys[2],
+            'Initial_SOC': keys[3],
+            'Variation_ID': keys[4]
+        }
+        
+        for i, v_val in enumerate(resampled_voltage):
+            row_dict[f'V_frac_{i}'] = v_val
+            
+        feature_rows.append(row_dict)
+        
+    features_df = pd.DataFrame(feature_rows)
+    features_df['Battery_ID'] = features_df.groupby(group_cols).ngroup()
+    
+    return features_df
+
 
 def extract_features_for_soc(real_raw_path, soc_val):
-    """Extraherar eller laddar cachade features för en specifik SOC-nivå. Detta ska snabba på runtimes vid upprepade körningar, som i SOC-sweep."""
+    """Extraherar eller laddar cachade features för en specifik SOC-nivå."""
+    soc_int = int(round(soc_val * 100))
+    
+    # Vi ger cache-filen ett annat namn om vi kör kapacitetsfraktioner så de inte krockar
+    cache_suffix = "capacity_fraction" if soc_val <= 0.2 else "voltage_bins"
+    feature_cache_path = os.path.join(FEATURES_DIR, f"real_features_soc_{soc_int}_{cache_suffix}.csv")
+    
+    if os.path.exists(feature_cache_path):
+        print(f"\n--- Laddar cachade features ({cache_suffix}) för Initial_SOC = {soc_int}% ---")
+        features_df = pd.read_csv(feature_cache_path, low_memory=False)
+        
+        if soc_val <= 0.2:
+            all_bin_cols = [c for c in features_df.columns if c.startswith('V_frac_')]
+        else:
+            all_bin_cols = sorted(
+                (c for c in features_df.columns if c.startswith('dV_dQ_V_')),
+                key=lambda c: -float(c.split('_')[3]),
+            )
+        return features_df, all_bin_cols
+
+    print(f"\n--- Extraherar features ({cache_suffix}) för Initial_SOC = {soc_int}% ---")
+    
+    sim_df = pd.read_csv(SYNTHETIC_RAW_CSV)
+    sim_df["DataKind"] = "synthetic"
+    
+    real_df = pd.read_csv(real_raw_path, low_memory=False)
+    real_df["DataKind"] = "real"
+    
+    combined = pd.concat([sim_df, real_df], ignore_index=True)
+    temp_raw_csv = os.path.join(SCRIPT_DIR, f"temp_raw_soc_{soc_int}.csv")
+    combined.to_csv(temp_raw_csv, index=False)
+
+    # --- HÄR ÄR SKILJELINJEN ---
+    if soc_val <= 0.2:
+        # Använd kapacitetsnormalisering för låga SOC (<= 20%)
+        features_df = create_features_by_capacity_fraction(temp_raw_csv, n_bins=100)
+    else:
+        # Använd vanliga spänningsbins för högre SOC
+        features_df = create_features_by_voltage_bins(temp_raw_csv, output_dir=FEATURES_DIR, exclude_final_transition=True)
+
+        raw_df = pd.read_csv(temp_raw_csv, low_memory=False)
+        raw_df['Battery_ID'] = raw_df.groupby(GROUPBY_COLS).ngroup()
+        battery_to_kind = raw_df.drop_duplicates('Battery_ID').set_index('Battery_ID')['DataKind']
+        features_df['DataKind'] = features_df['Battery_ID'].map(battery_to_kind)
+
+    # Försäkra dig om att DataKind finns med oavsett metod (om den inte sattes i funktionen)
+    if 'DataKind' not in features_df.columns:
+        raw_df = pd.read_csv(temp_raw_csv, low_memory=False)
+        raw_df['Battery_ID'] = raw_df.groupby(GROUPBY_COLS).ngroup()
+        battery_to_kind = raw_df.drop_duplicates('Battery_ID').set_index('Battery_ID')['DataKind']
+        features_df['DataKind'] = features_df['Battery_ID'].map(battery_to_kind)
+
+    if soc_val <= 0.2:
+        all_bin_cols = [c for c in features_df.columns if c.startswith('V_frac_')]
+    else:
+        all_bin_cols = sorted(
+            (c for c in features_df.columns if c.startswith('dV_dQ_V_')),
+            key=lambda c: -float(c.split('_')[3]),
+        )
+    
+    os.makedirs(FEATURES_DIR, exist_ok=True)
+    features_df.to_csv(feature_cache_path, index=False)
+    
+    if os.path.exists(temp_raw_csv):
+        os.remove(temp_raw_csv)
+        
+    return features_df, all_bin_cols
+
+"""def extract_features_for_soc(real_raw_path, soc_val):
+    # Extraherar eller laddar cachade features för en specifik SOC-nivå. Detta ska snabba på runtimes vid upprepade körningar, som i SOC-sweep.
     soc_int = int(round(soc_val * 100))
     feature_cache_path = os.path.join(FEATURES_DIR, f"real_features_soc_{soc_int}.csv")
     
@@ -88,12 +205,13 @@ def extract_features_for_soc(real_raw_path, soc_val):
         os.remove(temp_raw_csv)
         
     return features_df, all_bin_cols
-
+"""
 
 def run_multi_soc_evaluation():
     """Kör träning och utvärdering för varje SOC-nivå separat för RF och XGB."""
     soc_levels = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05]
-    
+    # Snabbare körning
+    # soc_levels = [0.5, 0.4, 0.3, 0.2, 0.1, 0.05]
     results = {
         "SOC": [],
         "RF_Balanced_Accuracy": [],
@@ -114,12 +232,23 @@ def run_multi_soc_evaluation():
         if not bin_cols:
             print(f"Inga giltiga bins för SOC {int(soc*100)}%.")
             continue
-
         metadata_cols = ['Battery_ID', 'Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC']
         keep_cols = [c for c in metadata_cols if c in features_df.columns] + bin_cols
 
-        synth_sub = features_df[features_df['DataKind'] == 'synthetic'][keep_cols].dropna(subset=bin_cols)
-        real_sub = features_df[features_df['DataKind'] == 'real'][keep_cols].dropna(subset=bin_cols)
+        # Skapa upp datamängderna INNAN dropna för att kunna kika på dem
+        synth_sub_raw = features_df[features_df['DataKind'] == 'synthetic'][keep_cols]
+        real_sub_raw = features_df[features_df['DataKind'] == 'real'][keep_cols]
+
+        """  # --- DIAGNOSTIK: Kika här innan dropna rensar bort allt ---
+        print(f"\n--- DIAGNOSTIK FÖR SOC {int(soc*100)}% ---")
+        print(f"Antal verkliga batterier före rensning: {len(real_sub_raw)}")
+        print("Antal giltiga (ej NaN) värden per spänningsbin i real_sub_raw:")
+        print(real_sub_raw[bin_cols].notna().sum().to_string())
+        # --------------------------------------------------------"""
+
+        # Nu rensar vi bort rader som saknar värden i binsen
+        synth_sub = synth_sub_raw.dropna(subset=bin_cols)
+        real_sub = real_sub_raw.dropna(subset=bin_cols)
 
         if len(synth_sub) == 0 or len(real_sub) == 0:
             print(f"För få rader kvar efter rensning för SOC {int(soc*100)}%.")

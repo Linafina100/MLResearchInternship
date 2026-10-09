@@ -133,6 +133,73 @@ def create_features_by_voltage_bins(input_csv, output_dir=None, min_chemistry_co
     return full_df
 
 
+
+import numpy as np
+import pandas as pd
+
+## NY FUNKTION FÖR ATT PUSHA UPP ACCURACY I FÖR LÅGA INITIAL SOC
+def create_features_by_capacity_fraction(raw_csv_path, n_bins=100):
+    """
+    Resamplar varje battericykel till ett fast antal punkter (n_bins) 
+    baserat på dess egna relativa kapacitetsförlopp (0 till 1).
+    Fungerar perfekt för korta/trunkerade cyklar vid låg SOC!
+    """
+    df = pd.read_csv(raw_csv_path, low_memory=False)
+    
+    # Identifiera unika batterier baserat på dina metadata-kolumner
+    group_cols = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
+    
+    feature_rows = []
+    
+    for keys, group in df.groupby(group_cols):
+        # Sortera kronologiskt efter tid om det behövs
+        group = group.sort_values('Time [s]')
+        
+        voltage = group['Voltage [V]'].values
+        capacity = group['Capacity [A.h]'].values if 'Capacity [A.h]' in group.columns else group['Time [s]'].values
+        
+        # Om kurven är för kort, hoppa över den
+        if len(voltage) < 5:
+            continue
+            
+        # Normalisera kapaciteten från 0 till 1 för denna cykel
+        cap_min = capacity[0]
+        cap_max = capacity[-1]
+        
+        if cap_max == cap_min:
+            continue
+            
+        cap_normalized = (capacity - cap_min) / (cap_max - cap_min)
+        
+        # Skapa en fast grid från 0.0 till 1.0 (t.ex. 100 punkter)
+        target_grid = np.linspace(0.0, 1.0, n_bins)
+        
+        # Interpolera spänningen på det fasta griden
+        resampled_voltage = np.interp(target_grid, cap_normalized, voltage)
+        
+        # Bygg raden med features + metadata
+        row_dict = {
+            'Chemistry': keys[0],
+            'Size_Multiplier': keys[1],
+            'SOH': keys[2],
+            'Initial_SOC': keys[3],
+            'Variation_ID': keys[4]
+        }
+        
+        # Lägg till de interpolerade spänningspunkterna som features
+        for i, v_val in enumerate(resampled_voltage):
+            row_dict[f'V_frac_{i}'] = v_val
+            
+        feature_rows.append(row_dict)
+        
+    features_df = pd.DataFrame(feature_rows)
+    
+    # Skapa ett Battery_ID för att matcha din pipeline
+    features_df['Battery_ID'] = features_df.groupby(group_cols).ngroup()
+    
+    return features_df
+
+
 if __name__ == "__main__":
     input_file = os.path.join("data", "default", "raw", "synthetic_battery_data.csv")
     create_features_by_voltage_bins(input_file)
