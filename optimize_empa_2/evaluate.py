@@ -11,6 +11,9 @@ import sys
 
 import numpy as np
 import pandas as pd
+
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
@@ -94,14 +97,14 @@ def extract_features_for_soc(real_raw_path, soc_val):
     soc_int = int(round(soc_val * 100))
     
     # Vi ger cache-filen ett annat namn om vi kör kapacitetsfraktioner så de inte krockar
-    cache_suffix = "capacity_fraction" if soc_val <= 0.2 else "voltage_bins"
+    cache_suffix = "capacity_fraction" if soc_val <= 0.3 else "voltage_bins"
     feature_cache_path = os.path.join(FEATURES_DIR, f"real_features_soc_{soc_int}_{cache_suffix}.csv")
     
     if os.path.exists(feature_cache_path):
         print(f"\n--- Laddar cachade features ({cache_suffix}) för Initial_SOC = {soc_int}% ---")
         features_df = pd.read_csv(feature_cache_path, low_memory=False)
         
-        if soc_val <= 0.2:
+        if soc_val <= 0.3:
             all_bin_cols = [c for c in features_df.columns if c.startswith('V_frac_')]
         else:
             all_bin_cols = sorted(
@@ -123,8 +126,8 @@ def extract_features_for_soc(real_raw_path, soc_val):
     combined.to_csv(temp_raw_csv, index=False)
 
     # --- HÄR ÄR SKILJELINJEN ---
-    if soc_val <= 0.2:
-        # Använd kapacitetsnormalisering för låga SOC (<= 20%)
+    if soc_val <= 0.3:
+        # Använd kapacitetsnormalisering för låga SOC (<= 30%)
         features_df = create_features_by_capacity_fraction(temp_raw_csv, n_bins=100)
     else:
         # Använd vanliga spänningsbins för högre SOC
@@ -272,7 +275,7 @@ def run_multi_soc_evaluation():
         X_test_s = scaler.transform(X_test_i)
 
         # 1. Random Forest
-        rf = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
+        rf = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1, class_weight='balanced')
         rf.fit(X_train_s, y_train)
         rf_preds = rf.predict(X_test_s)
         
@@ -309,6 +312,32 @@ def run_multi_soc_evaluation():
         print(f"    - Precision (wtd)  : {xgb_prec:.2f}%")
         print(f"    - Recall (wtd)     : {xgb_rec:.2f}%")
         print(f"    - F1-score (wtd)   : {xgb_f1:.2f}%")
+
+        # --- RÄTTAD KOD FÖR KONFUSIONSMATRIS ---
+        if soc in [0.1, 0.2, 0.05]:
+            class_labels = le.inverse_transform(np.unique(y_test))
+            for model_name, preds in [("RF", rf_preds), ("XGB", xgb_preds)]:
+                cm = confusion_matrix(y_test, preds)
+                
+                plt.figure(figsize=(6, 5))
+                # Skicka med xticklabels och ytticklabels direkt här:
+                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                            xticklabels=class_labels, 
+                            yticklabels=class_labels)
+                
+                plt.title(f'Confusion Matrix - {model_name} (SOC: {int(soc*100)}%)', fontsize=12)
+                plt.xlabel('Predicted Chemistry', fontsize=10)
+                plt.ylabel('True Chemistry', fontsize=10)
+                
+                cm_path = os.path.join(SCRIPT_DIR, f'confusion_matrix_{model_name.lower()}_soc_{int(soc*100)}.png')
+                plt.tight_layout()
+                plt.savefig(cm_path, dpi=300)
+                plt.close()
+                print(f"  [Sparad konfusionsmatris]: {cm_path}")
+
+        results["SOC"].append(soc * 100)
+        results["RF_Balanced_Accuracy"].append(rf_bacc)
+        results["XGB_Balanced_Accuracy"].append(xgb_bacc)
 
         results["SOC"].append(soc * 100)
         results["RF_Balanced_Accuracy"].append(rf_bacc)
