@@ -1,7 +1,7 @@
 """
-EMPA RO-Crate builder with SOC sweep truncation.
-Extracts real cycles matching SOH_MIN <= SOH <= SOH_MAX, applies truncation across
-SOC_START_POINTS without target-zone restrictions, and outputs real_empa_raw.csv.
+EMPA RO-Crate builder with low-SOC sweep truncation.
+Filters real cycles matching SOH and C-rate conditions, enforces depth-of-discharge
+sanity checks, applies low-SOC truncation, and outputs real_empa_raw.csv.
 """
 import glob
 import json
@@ -14,10 +14,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 EMPA_DIR = os.path.join(PROJECT_DIR, "data", "Empa_dataset")
 
-SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
+# Filtering thresholds optimized for low-SOC accuracy
+SOH_MIN = float(os.environ.get("SOH_MIN", 0.85))
 SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))
-C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.0))
-C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 999.0))
+C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.05))
+C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 1.0))
 CURRENT_EPS_A = 5e-7
 MIN_SEGMENT_POINTS = 15
 BOL_WINDOW_CYCLES = 10
@@ -25,9 +26,21 @@ MAX_SEGMENT_DURATION_HOURS = 24.0
 MIN_VOLTAGE_SPAN_V = 0.3
 RESCALE_TARGET_AH = 2.0
 N_RESAMPLE_POINTS = 80
-MIN_RAW_POINTS_AFTER_TRUNCATION = 5
+'''Previous versoin had 5 ponits. 
+Why it matters:
+When simulating discharge from very low SOCs only a brief tail remains before hitting the lowers
+voltage cutoff. If a segment contains only 5 raw reading, resampling it onto an 80 point grid (
+N_resample_ponits) creates severe numerical interpolation artifacts. 
+Requiring at least 10 raw points ensures the segment contians sufficient
+physical gradinet information to compute reliable dv/dq values.'''
+MIN_RAW_POINTS_AFTER_TRUNCATION = 10
 
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
+'''Chnage this value to limit the number of cycles per cell that are processed.'''
+MAX_CYCLES_PER_CELL = 600  # Caps cycles per cell to keep build time fast
+
+# Low SOC sweep range
+#SOC_START_POINTS = [0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
 ACTIVE_MATERIAL_TO_CHEMISTRY = {
     "LithiumIronPhosphateOxide": "LFP",
@@ -80,8 +93,28 @@ def resample_on_capacity(t_s, voltage, cap_ah, n_points=N_RESAMPLE_POINTS):
     v_resampled = np.interp(cap_grid, cap_ah, voltage)
     return t_resampled, v_resampled, cap_grid
 
+'''In earlier versions of the code, truncate_at_soc() had no check on wheter the truncated
+discharge segment reached a meaningful depth. 
+Its docstrinf explicitly stated "no target-zone voltage boundary check is enforced".
+Thia allowed shallow cycles into the dataset that were cut off before leaving the high voltage plateau.
+
+the change:
+Added the depth of discharge check right before returing valid segments
+
+why it matters:
+Discarding truncated segments that never dip below 3.0 V prurges incomplete,
+uninformative cycles. Without this filter, the real test set was flooded with ambigous
+traces that lacked distinct electrochemical signatures, which had previously caused the 
+classifier to collapse into majority class guessing. 
+Kan också ändras till typ 2.5V men då riskerar vi att kasta meningfulla cykler bara att 
+de inte laddades ur helt
+KAN VARA EN BRA TUNE PARAMETER.
+'''
 
 def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
+    """Keeps only the portion of a full real discharge trace occurring after
+    (1 - soc_start) of this cycle's delivered capacity. Time and Capacity are
+    reset to 0."""
     total_capacity = cap_ah[-1]
     cap_threshold = (1.0 - soc_start) * total_capacity
 
@@ -102,10 +135,9 @@ def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
     if len(t_kept) < MIN_RAW_POINTS_AFTER_TRUNCATION:
         return None
 
-    # --- ADD IT HERE ---
-    if v_kept.min() >= 3.0:
-        return None  # discards shallow discharges that never dip below 3.0V
-    # -------------------
+    # Sanity filter (depth of discharge): discard shallow cycles that never dip below 3.0V
+    if v_kept.min() >= 2.7:
+        return None
 
     return t_kept, v_kept, cap_kept
 
@@ -140,7 +172,6 @@ def process_cell(cell_dir):
     rows = []
     n_cycles_matched = 0
     n_variants = 0
-    variant_counts_by_soc = {s: 0 for s in SOC_START_POINTS}
 
     for cycle_number, seg in segments:
         t_s, cap_ah = segment_capacity_ah(seg)
@@ -170,7 +201,6 @@ def process_cell(cell_dir):
             t_rs, v_rs, cap_rs = resample_on_capacity(t_trunc, v_trunc, cap_trunc_rescaled)
 
             n_variants += 1
-            variant_counts_by_soc[s] += 1
             rows.append(pd.DataFrame({
                 "Time [s]": t_rs,
                 "Voltage [V]": v_rs,
@@ -185,9 +215,11 @@ def process_cell(cell_dir):
                 "Ambient_Temperature_C": ambient_t,
             }))
 
+        if n_cycles_matched >= MAX_CYCLES_PER_CELL:
+            break
+
     status = (f"{cell_id} ({chemistry}): BOL={bol_capacity * 1000:.3f} mAh, "
-              f"{len(segments)} discharge cycles scanned, {n_cycles_matched} cycles in "
-              f"[{SOH_MIN}, {SOH_MAX}] & C-rate [{C_RATE_MIN}, {C_RATE_MAX}], "
+              f"{len(segments)} cycles scanned, {n_cycles_matched} matching cycles, "
               f"{n_variants} SOC variants kept")
     if not rows:
         return None, status
@@ -212,7 +244,7 @@ def main():
                 n_nmc_cells += 1
 
     if not all_rows:
-        print("\nNo matching cycles found anywhere -- widen SOH_MIN/SOH_MAX or the C-rate window.")
+        print("\nNo matching cycles found anywhere -- adjust SOH or C-rate filters.")
         return
 
     combined = pd.concat(all_rows, ignore_index=True)

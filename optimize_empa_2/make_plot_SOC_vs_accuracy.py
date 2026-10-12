@@ -54,7 +54,7 @@ def main():
     ax.set_title("EMPA Sim-to-Real Accuracy vs. Initial SOC\n"
                  "(Continuous-discharge-truncated synthetic training, all voltage bins)")
     ax.set_xlim(1.05, 0.0)  # Descending: full charge (left) -> near-empty (right)
-    ax.set_ylim(0, 105)
+    ax.set_ylim(70, 105)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="lower left", fontsize=9)
 

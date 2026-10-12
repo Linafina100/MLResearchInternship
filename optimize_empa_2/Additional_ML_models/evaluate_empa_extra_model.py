@@ -1,0 +1,221 @@
+from email import header
+
+import matplotlib
+matplotlib.use("Agg")
+
+import json
+import os
+import sys
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import balanced_accuracy_score, recall_score
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from xgboost import XGBClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVC
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
+
+sys.path.insert(0, PROJECT_DIR)  # for root feature_engineering.py
+
+from feature_engineering import create_features_by_voltage_bins
+
+SYNTHETIC_RAW_CSV = os.path.join(PROJECT_DIR, "data", "raw", "advanced_synthetic_battery_data.csv")
+REAL_RAW_CSV = os.path.join(PROJECT_DIR, "data", "raw", "real_empa_raw.csv")
+RAW_CSV = os.path.join(SCRIPT_DIR, "sim_and_real_raw.csv")
+FEATURES_DIR = os.path.join(SCRIPT_DIR, "features", "four_model")
+RESULTS_JSON = os.path.join(SCRIPT_DIR, "sweep_results_4.json")
+GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
+
+# Synkroniserad med make_plot.py och build_real_empa_4.py
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
+#SOC_START_POINTS = [ 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
+
+
+def build_combined_raw_csv():
+    print(f"Loading synthetic data from '{SYNTHETIC_RAW_CSV}'...")
+    sim_df = pd.read_csv(SYNTHETIC_RAW_CSV)
+    sim_df["DataKind"] = "synthetic"
+    print(f"  -> {len(sim_df)} rows")
+
+    print(f"\nLoading real EMPA data from '{REAL_RAW_CSV}'...")
+    real_df = pd.read_csv(REAL_RAW_CSV, low_memory=False)
+    real_df["DataKind"] = "real" #added to make sure the model can later be evaluated on the real data only
+    print(f"  -> {len(real_df)} rows, {real_df['Variation_ID'].nunique()} real discharge cycles")
+
+    combined = pd.concat([sim_df, real_df], ignore_index=True)
+    combined.to_csv(RAW_CSV, index=False)
+    print(f"\nCombined raw data saved to '{RAW_CSV}': "
+          f"{(combined['DataKind'] == 'synthetic').sum()} synthetic rows, "
+          f"{(combined['DataKind'] == 'real').sum()} real rows")
+    return combined
+
+
+def extract_features_with_kind():
+    if not os.path.exists(RAW_CSV):
+        build_combined_raw_csv()
+    else:
+        print(f"Note: '{RAW_CSV}' already exists -- reusing it. Delete it to re-build from source.")
+
+    print("\nExtracting features (root feature_engineering.py, exclude_final_transition=True, "
+          "default V_BIN_MIN=1.9, >=20% mutual-coverage filter, no target-zone restriction)...")
+    features_df = create_features_by_voltage_bins(RAW_CSV, output_dir=FEATURES_DIR, exclude_final_transition=True)
+
+    raw_df = pd.read_csv(RAW_CSV, low_memory=False)
+    raw_df['Battery_ID'] = raw_df.groupby(GROUPBY_COLS).ngroup()
+    id_cols = raw_df.drop_duplicates('Battery_ID').set_index('Battery_ID')[['DataKind', 'Initial_SOC']]
+    features_df['DataKind'] = features_df['Battery_ID'].map(id_cols['DataKind'])
+    features_df['Initial_SOC'] = features_df['Battery_ID'].map(id_cols['Initial_SOC'])
+
+    all_bin_cols = sorted(
+        (c for c in features_df.columns if c.startswith('dV_dQ_V_')),
+        key=lambda c: -float(c.split('_')[3]),
+    )
+    print(f"\nSurviving bins across the full voltage span ({len(all_bin_cols)}): {all_bin_cols}")
+    print(features_df.groupby(['DataKind', 'Chemistry']).size().rename('n_batteries'))
+    return features_df, all_bin_cols
+
+
+def report_magnitude_and_coverage(features_df, bin_cols, soc):
+    real_sub_all = features_df[(features_df.DataKind == "real") & (features_df.Initial_SOC == soc)]
+    synth_sub_all = features_df[features_df.DataKind == "synthetic"]
+    for chem in ("LFP", "NMC"):
+        real_sub = real_sub_all[real_sub_all.Chemistry == chem]
+        synth_sub = synth_sub_all[synth_sub_all.Chemistry == chem]
+        print(f"  {chem} REAL  mean: {real_sub[bin_cols].mean().round(2).to_dict()}  "
+              f"coverage: {real_sub[bin_cols].notna().mean().round(2).to_dict()}")
+    print(f"  (for reference) SYNTH mean/coverage pooled across all Initial_SOC: "
+          f"{synth_sub_all[bin_cols].mean().round(2).to_dict()}")
+
+
+def fit_models(X_train_s, y_train):
+    models = {
+        "Random Forest": RandomForestClassifier(n_estimators=150, max_depth=10, random_state=42, n_jobs=-1),
+        "XGBoost": XGBClassifier(n_estimators=150, learning_rate=0.08, max_depth=4, subsample=0.8,
+                                  colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1),
+        "MLP": MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', alpha=1e-4,max_iter=500,early_stopping=True,
+            n_iter_no_change=15, random_state=42),
+        "RBF Network": SVC(kernel='rbf', C=1.0, gamma='scale', probability=True, random_state=42)
+    }
+    for model in models.values():
+        model.fit(X_train_s, y_train)
+    return models
+
+
+def evaluate_bucket(models, imputer, scaler, le, lower, upper, real_bucket_df, feature_cols):
+    X_test = real_bucket_df[feature_cols].replace([np.inf, -np.inf], np.nan)
+    y_test = le.transform(real_bucket_df['Chemistry'])
+
+    X_test_c = X_test.clip(lower=lower, upper=upper, axis=1)
+    X_test_i = imputer.transform(X_test_c)
+    X_test_s = scaler.transform(X_test_i)
+
+    out = {}
+    for name, model in models.items():
+        preds = model.predict(X_test_s)
+        recalls = recall_score(y_test, preds, average=None, labels=[0, 1])
+        out[name] = {
+            "n": int(len(real_bucket_df)),
+            "balanced_accuracy": float(balanced_accuracy_score(y_test, preds)),
+            "LFP_recall": float(recalls[0]),
+            "NMC_recall": float(recalls[1]),
+        }
+    return out
+
+
+def main():
+    features_df, bin_cols = extract_features_with_kind()
+
+    if not bin_cols:
+        print("\nNo surviving bins -- cannot train. Stopping here.")
+        return
+
+    synth_df = features_df[features_df['DataKind'] == 'synthetic'] #makes sure the model is trained on the synthetic data only
+    print(f"\n{'=' * 70}\nTraining once on the full synthetic set "
+          f"({len(synth_df)} batteries) using all {len(bin_cols)} surviving bins.\n{'=' * 70}")
+
+    X_train = synth_df[bin_cols].replace([np.inf, -np.inf], np.nan)
+    le = LabelEncoder()
+    y_train = le.fit_transform(synth_df['Chemistry'])
+    print(f"Target classes mapped: {dict(zip(le.classes_, le.transform(le.classes_)))}")
+
+    lower, upper = X_train.quantile(0.01), X_train.quantile(0.99)
+    X_train_c = X_train.clip(lower=lower, upper=upper, axis=1)
+    imputer = SimpleImputer(strategy='median')
+    X_train_i = imputer.fit_transform(X_train_c)
+    scaler = StandardScaler()
+    X_train_s = scaler.fit_transform(X_train_i)
+
+    models = fit_models(X_train_s, y_train)
+
+    print(f"\n{'=' * 70}\nEvaluating per Initial_SOC bucket\n{'=' * 70}")
+    bucket_results = {}
+    for soc in SOC_START_POINTS:
+        #makes sure the model is evaluated on the real data only
+        real_bucket = features_df[(features_df.DataKind == 'real') & (features_df.Initial_SOC == soc)]
+        if len(real_bucket) == 0:
+            print(f"\n--- Initial_SOC={soc}: no surviving real batteries, skipped ---")
+            continue
+
+        print(f"\n--- Initial_SOC={soc} ---")
+        report_magnitude_and_coverage(features_df, bin_cols, soc)
+        result = evaluate_bucket(models, imputer, scaler, le, lower, upper, real_bucket, bin_cols)
+        bucket_results[str(soc)] = result
+        n_lfp = (real_bucket.Chemistry == 'LFP').sum()
+        n_nmc = (real_bucket.Chemistry == 'NMC').sum()
+        print(f"  n={len(real_bucket)} ({n_lfp} LFP + {n_nmc} NMC)")
+        for model_name, r in result.items():
+            print(f"  {model_name:<15} balanced={r['balanced_accuracy']*100:.2f}%  "
+                  f"LFP_recall={r['LFP_recall']:.3f}  NMC_recall={r['NMC_recall']:.3f}")
+
+    print(f"\n{'=' * 105}\n=== SWEEP SUMMARY ===\n{'=' * 105}")
+    print(f"Bins used ({len(bin_cols)}): {bin_cols}\n")
+    
+    header = (
+        f"{'SOC':<6} {'n':<6} "
+        f"{'RF Bal':<8} {'RF LFP':<7} {'RF NMC':<7} "
+        f"{'XGB Bal':<8} {'XGB LFP':<7} {'XGB NMC':<7} "
+        f"{'MLP Bal':<8} {'MLP LFP':<7} {'MLP NMC':<7} "
+        f"{'RBF Bal':<8} {'RBF LFP':<7} {'RBF NMC':<7}"
+    )
+    print(header)
+    print("-" * 105)
+
+    for soc in SOC_START_POINTS:
+        s_str = str(soc)
+        if s_str not in bucket_results:
+            continue
+        rf  = bucket_results[s_str]["Random Forest"]
+        xgb = bucket_results[s_str]["XGBoost"]
+        mlp = bucket_results[s_str]["MLP"]
+        rbf = bucket_results[s_str]["RBF Network"]
+        
+        print(
+            f"{soc:<6} {rf['n']:<6} "
+            f"{rf['balanced_accuracy']*100:<8.2f} {rf['LFP_recall']:<7.3f} {rf['NMC_recall']:<7.3f} "
+            f"{xgb['balanced_accuracy']*100:<8.2f} {xgb['LFP_recall']:<7.3f} {xgb['NMC_recall']:<7.3f} "
+            f"{mlp['balanced_accuracy']*100:<8.2f} {mlp['LFP_recall']:<7.3f} {mlp['NMC_recall']:<7.3f} "
+            f"{rbf['balanced_accuracy']*100:<8.2f} {rbf['LFP_recall']:<7.3f} {rbf['NMC_recall']:<7.3f}"
+        )
+    # Spara till sweep_results.json för make_plot.py
+    existing_results = {}
+    if os.path.exists(RESULTS_JSON):
+        try:
+            with open(RESULTS_JSON, "r") as f:
+                existing_results = json.load(f)
+        except Exception as e:
+            print(f"Note: Could not parse existing '{RESULTS_JSON}' ({e}). Rebuilding.")
+
+    existing_results["EMPA"] = {"buckets": bucket_results}
+    os.makedirs(os.path.dirname(RESULTS_JSON), exist_ok=True)
+    with open(RESULTS_JSON, "w") as f:
+        json.dump(existing_results, f, indent=2)
+    print(f"\nSaved EMPA sweep results to '{RESULTS_JSON}'")
+
+
+if __name__ == "__main__":
+    main()

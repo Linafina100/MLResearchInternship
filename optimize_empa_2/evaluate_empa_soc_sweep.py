@@ -36,7 +36,8 @@ RESULTS_JSON = os.path.join(SCRIPT_DIR, "sweep_results.json")
 GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 
 # Synkroniserad med make_plot.py och build_real_empa_4.py
-SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
+#SOC_START_POINTS = [ 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
 
 
 def build_combined_raw_csv():
@@ -47,7 +48,7 @@ def build_combined_raw_csv():
 
     print(f"\nLoading real EMPA data from '{REAL_RAW_CSV}'...")
     real_df = pd.read_csv(REAL_RAW_CSV, low_memory=False)
-    real_df["DataKind"] = "real"
+    real_df["DataKind"] = "real" #added to make sure the model can later be evaluated on the real data only
     print(f"  -> {len(real_df)} rows, {real_df['Variation_ID'].nunique()} real discharge cycles")
 
     combined = pd.concat([sim_df, real_df], ignore_index=True)
@@ -134,7 +135,7 @@ def main():
         print("\nNo surviving bins -- cannot train. Stopping here.")
         return
 
-    synth_df = features_df[features_df['DataKind'] == 'synthetic']
+    synth_df = features_df[features_df['DataKind'] == 'synthetic'] #makes sure the model is trained on the synthetic data only
     print(f"\n{'=' * 70}\nTraining once on the full synthetic set "
           f"({len(synth_df)} batteries) using all {len(bin_cols)} surviving bins.\n{'=' * 70}")
 
@@ -155,6 +156,7 @@ def main():
     print(f"\n{'=' * 70}\nEvaluating per Initial_SOC bucket\n{'=' * 70}")
     bucket_results = {}
     for soc in SOC_START_POINTS:
+        #makes sure the model is evaluated on the real data only
         real_bucket = features_df[(features_df.DataKind == 'real') & (features_df.Initial_SOC == soc)]
         if len(real_bucket) == 0:
             print(f"\n--- Initial_SOC={soc}: no surviving real batteries, skipped ---")
