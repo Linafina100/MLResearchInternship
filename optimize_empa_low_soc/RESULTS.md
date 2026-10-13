@@ -17,6 +17,14 @@ Each attempt's own `data/optimize_empa_low_soc_NN_.../` namespace
 `optimize_empa_2/`'s `data/raw/` paths, so this campaign's data can be
 regenerated or modified without touching the colleagues' pipeline.
 
+## Progress at a glance
+
+![Campaign progress: XGBoost balanced accuracy vs. Initial SOC across attempts 01, 02-03, 04, 05](outputs/plots/campaign_progress.png)
+
+(Random Forest and attempt 02 omitted -- see `make_plot.py`'s docstring
+for why: XGBoost dominates at every SOC point tested, and attempt 02's
+XGBoost curve is pixel-identical to attempt 03's.)
+
 ## Running log of attempts
 
 | # | Folder | Idea | Best result | Status |
