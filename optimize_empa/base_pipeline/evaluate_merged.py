@@ -136,7 +136,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
+PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
 sys.path.insert(0, PROJECT_DIR)  # for root feature_engineering.py
 

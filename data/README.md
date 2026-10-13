@@ -76,14 +76,21 @@ not strictly by producing-group.)
 | `32_lfp_negative_electrode_balance` | `simulate_lfp_negative_electrode_balance.py` -- LFP-only resimulation with the validated negative-electrode capacity fix |
 | `32_synthetic_lfp_balance_fix_combined` | `combine_lfp_fix_with_baseline_nmc.py` -- combines the fix above with unmodified baseline NMC |
 
-## 3. `optimize_empa/` campaign data (completed, merged to main)
+## 3. Orphaned: former `optimize_empa/` campaign data (producing folder deleted)
 
-| Folder | Produced by |
+The original, completed `optimize_empa/` campaign (negative-electrode-
+balance + ratio-to-median tuning) was deleted once its single validated
+finding had been fully carried forward as the attempt-01 baseline of
+the campaign now living at `optimize_empa/` (see section 4 -- that's a
+different, later campaign that reused the freed folder name). Nothing
+currently produces or reads these two folders.
+
+| Folder | Produced by (deleted) |
 |---|---|
-| `optimize_empa_01_real_empa` | `optimize_empa/experiment/01_ratio_to_median_baseline/data_generation/build_real_empa_soc_sweep_soh_range.py` |
-| `optimize_empa_01_synthetic_baseline` | that same experiment's `data_generation/` scripts (negative-electrode-balance-fixed LFP + unmodified NMC) |
+| `optimize_empa_01_real_empa` | was `optimize_empa/experiment/01_ratio_to_median_baseline/data_generation/build_real_empa_soc_sweep_soh_range.py` |
+| `optimize_empa_01_synthetic_baseline` | was that experiment's `data_generation/` scripts (negative-electrode-balance-fixed LFP + unmodified NMC) |
 
-## 4. `optimize_empa_low_soc/` campaign data (active, this branch)
+## 4. `optimize_empa/` campaign data (active, this branch)
 
 | Folder | Produced by |
 |---|---|
@@ -93,13 +100,17 @@ not strictly by producing-group.)
 | `optimize_empa_low_soc_03_synthetic` | attempt 03's generator (`NEG_CAPACITY_FACTOR=0.45`, tuned) |
 
 (Attempts 04/05 are evaluation-only changes -- they reuse attempt 03's
-synthetic data and attempt 01's real data directly, no new folder.)
+synthetic data and attempt 01's real data directly, no new folder. The
+`optimize_empa_low_soc_*` data-folder names predate this campaign's code
+folder being renamed from `optimize_empa_low_soc/` to `optimize_empa/` --
+left unchanged per this project's data/ convention of not renaming
+regenerable output just to track a code move.)
 
-## 5. `optimize_empa_2/` campaign data (colleagues' shared pipeline, documented here for completeness only -- not ours to restructure)
+## 5. `optimize_empa/base_pipeline/` campaign data (colleagues' shared pipeline, documented here for completeness)
 
 | Folder | What it is |
 |---|---|
-| `raw/`, `plots/`, `failures/` | `optimize_empa_2`'s default, unnamespaced output location (its scripts' `DATA_DIR` defaults straight to `data/`, not a per-campaign subfolder) -- `raw/` holds both its synthetic and real CSVs together. |
+| `raw/`, `plots/`, `failures/` | `base_pipeline`'s default, unnamespaced output location (its scripts' `DATA_DIR` defaults straight to `data/`, not a per-campaign subfolder) -- `raw/` holds both its synthetic and real CSVs together. |
 
 ## 6. Cross-cutting / diagnostic (not experiment-specific)
 

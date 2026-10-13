@@ -1,55 +1,43 @@
 """
-Experiment 26: real-to-sim Initial_SOC sweep test set from the EMPA
-RO-Crate dataset, adapted from
-experiments/22_29_sim_to_real_validation/23_empa_soc_sweep/build_real_empa_soc_sweep_dataset.py with
-two changes:
+optimize_empa_2 merge draft: copy of build_real_empa.py (hilda/main's
+version -- depth-of-discharge sanity check restored, tightened SOH/C-rate
+defaults, MAX_CYCLES_PER_CELL cap) with two portability/testing fixes:
 
-1. SOH selection is a RANGE (SOH_MIN <= soh <= SOH_MAX, default 0.8-1.0)
-   instead of exp23's point+tolerance (SOH=0.8+/-0.02) -- matching the
-   synthetic training data this experiment uses
-   (data/24_soh_range_0.8_1.0_v1.5/, SOH sampled 0.8-1.0), the same way
-   experiment 24 did for its own (non-SOC-swept) EMPA test set.
-2. `truncate_at_soc()` no longer discards a variant for failing to dip
-   below 3.0V -- this experiment trains on ALL voltage bins the mutual-
-   coverage filter lets survive (root feature_engineering.py, unmodified),
-   not a hand-picked 2.5-3.0V target zone, so a variant that never reaches
-   that specific zone is still potentially useful for other bins.
+1. EMPA_DIR was hardcoded to data/Empa_dataset, which doesn't exist on
+   this machine -- the actual downloaded RO-Crate directory is
+   data/Dataset-rocrate (matching every other build_real_empa*.py script
+   in this project, e.g.
+   experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/
+   build_real_empa_soc_sweep_soh_range.py). Fixed, and made overridable
+   via the EMPA_DIR env var like the project's other builders.
 
-Everything else (get_chemistry, discharge_segments, segment_capacity_ah,
-resample_on_capacity, the rest-phase/duration/voltage-span sanity filters,
-RESCALE_TARGET_AH) is unchanged from experiment 22/23 -- see
-experiments/22_29_sim_to_real_validation/22_empa_rocrate_sim_to_real/RESULTS.md for why each exists.
+2. MAX_CYCLES_PER_CELL was hardcoded (600) -- made overridable via env
+   var so a smoke-test run can cap it low (e.g. 20) to bound runtime and
+   memory without touching the validated default for a real run.
 
-optimize_empa, attempt 01 (copied in from
-experiments/22_29_sim_to_real_validation/26_soc_sweep_three_datasets/
-for self-containment -- see this folder's RESULTS.md): writes to this
-campaign's own data/optimize_empa_01_real_empa/ path instead of
-data/26_real_empa_soc_sweep_soh_range/. NOT invoked by run_evaluation.py
--- kept here so the real data this script reads is itself reproducible
-from local files alone, without depending on another experiment's data
-path.
+Everything else (SOH/C-rate filters, depth-of-discharge check, SOC
+truncation logic) is unchanged from the current main branch version --
+see this file's sibling evaluate_merged.py for what's new on the
+evaluation side.
 
-Usage: python3 optimize_empa/experiment/01_ratio_to_median_baseline/data_generation/build_real_empa_soc_sweep_soh_range.py
+Usage: python3 optimize_empa_2/build_real_empa_merged.py
 """
 import glob
 import json
 import os
-import sys
 
 import numpy as np
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR))))
-ROCRATE_DIR = os.path.join(PROJECT_DIR, "data", "Dataset-rocrate")
-sys.path.insert(0, SCRIPT_DIR)
+PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+EMPA_DIR = os.environ.get("EMPA_DIR", os.path.join(PROJECT_DIR, "data", "Dataset-rocrate"))
 
-from soc_truncation import truncate_at_soc
-
-SOH_MIN = float(os.environ.get("SOH_MIN", 0.8))
+# Filtering thresholds optimized for low-SOC accuracy (unchanged from main)
+SOH_MIN = float(os.environ.get("SOH_MIN", 0.85))
 SOH_MAX = float(os.environ.get("SOH_MAX", 1.0))
-C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.0))
-C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 999.0))
+C_RATE_MIN = float(os.environ.get("C_RATE_MIN", 0.05))
+C_RATE_MAX = float(os.environ.get("C_RATE_MAX", 1.0))
 CURRENT_EPS_A = 5e-7
 MIN_SEGMENT_POINTS = 15
 BOL_WINDOW_CYCLES = 10
@@ -57,6 +45,9 @@ MAX_SEGMENT_DURATION_HOURS = 24.0
 MIN_VOLTAGE_SPAN_V = 0.3
 RESCALE_TARGET_AH = 2.0
 N_RESAMPLE_POINTS = 80
+MIN_RAW_POINTS_AFTER_TRUNCATION = 10
+
+MAX_CYCLES_PER_CELL = int(os.environ.get("MAX_CYCLES_PER_CELL", 600))
 
 SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
@@ -65,8 +56,7 @@ ACTIVE_MATERIAL_TO_CHEMISTRY = {
     "LithiumNickelCobaltManganeseOxide": "NMC",
 }
 
-RUN_LABEL = os.environ.get("RUN_LABEL", "optimize_empa_01_real_empa")
-OUT_RAW_CSV = os.path.join(PROJECT_DIR, "data", RUN_LABEL, "raw", "real_empa_soc_sweep_raw.csv")
+OUT_RAW_CSV = os.environ.get("REAL_RAW_CSV", os.path.join(PROJECT_DIR, "data", "raw", "real_empa_raw.csv"))
 
 
 def get_chemistry(cell_dir, cell_id):
@@ -113,8 +103,35 @@ def resample_on_capacity(t_s, voltage, cap_ah, n_points=N_RESAMPLE_POINTS):
     return t_resampled, v_resampled, cap_grid
 
 
-# truncate_at_soc() moved to soc_truncation.py (was identical across
-# three build scripts; see that file's docstring).
+def truncate_at_soc(t_s, voltage, cap_ah, soc_start):
+    """Keeps only the portion of a full real discharge trace occurring after
+    (1 - soc_start) of this cycle's delivered capacity. Time and Capacity are
+    reset to 0."""
+    total_capacity = cap_ah[-1]
+    cap_threshold = (1.0 - soc_start) * total_capacity
+
+    if cap_threshold <= 0:
+        t_kept, v_kept, cap_kept = t_s, voltage, cap_ah
+    else:
+        t_at_thresh = np.interp(cap_threshold, cap_ah, t_s)
+        v_at_thresh = np.interp(cap_threshold, cap_ah, voltage)
+        mask = cap_ah > cap_threshold
+        if mask.sum() < MIN_RAW_POINTS_AFTER_TRUNCATION - 1:
+            return None
+        t_kept = np.concatenate([[t_at_thresh], t_s[mask]])
+        v_kept = np.concatenate([[v_at_thresh], voltage[mask]])
+        cap_kept = np.concatenate([[cap_threshold], cap_ah[mask]])
+        t_kept = t_kept - t_kept[0]
+        cap_kept = cap_kept - cap_kept[0]
+
+    if len(t_kept) < MIN_RAW_POINTS_AFTER_TRUNCATION:
+        return None
+
+    # Sanity filter (depth of discharge): discard shallow cycles that never dip below 2.7V
+    if v_kept.min() >= 2.7:
+        return None
+
+    return t_kept, v_kept, cap_kept
 
 
 def process_cell(cell_dir):
@@ -147,7 +164,7 @@ def process_cell(cell_dir):
     rows = []
     n_cycles_matched = 0
     n_variants = 0
-    variant_counts_by_soc = {s: 0 for s in SOC_START_POINTS}
+
     for cycle_number, seg in segments:
         t_s, cap_ah = segment_capacity_ah(seg)
         capacity = cap_ah[-1]
@@ -176,7 +193,6 @@ def process_cell(cell_dir):
             t_rs, v_rs, cap_rs = resample_on_capacity(t_trunc, v_trunc, cap_trunc_rescaled)
 
             n_variants += 1
-            variant_counts_by_soc[s] += 1
             rows.append(pd.DataFrame({
                 "Time [s]": t_rs,
                 "Voltage [V]": v_rs,
@@ -191,20 +207,22 @@ def process_cell(cell_dir):
                 "Ambient_Temperature_C": ambient_t,
             }))
 
+        if n_cycles_matched >= MAX_CYCLES_PER_CELL:
+            break
+
     status = (f"{cell_id} ({chemistry}): BOL={bol_capacity * 1000:.3f} mAh, "
-              f"{len(segments)} discharge cycles scanned, {n_cycles_matched} cycles at "
-              f"SOH in [{SOH_MIN},{SOH_MAX}] & C-rate [{C_RATE_MIN},{C_RATE_MAX}], "
-              f"{n_variants} SOC-sweep variants kept {variant_counts_by_soc}")
+              f"{len(segments)} cycles scanned, {n_cycles_matched} matching cycles, "
+              f"{n_variants} SOC variants kept")
     if not rows:
         return None, status
     return pd.concat(rows, ignore_index=True), status
 
 
 def main():
-    cell_dirs = sorted(d for d in glob.glob(os.path.join(ROCRATE_DIR, "empa__ccid*")) if os.path.isdir(d))
-    print(f"Found {len(cell_dirs)} cell directories in '{ROCRATE_DIR}'")
-    print(f"Target: SOH in [{SOH_MIN}, {SOH_MAX}], C-rate [{C_RATE_MIN}, {C_RATE_MAX}]")
-    print(f"SOC_START_POINTS: {SOC_START_POINTS}\n")
+    cell_dirs = sorted(d for d in glob.glob(os.path.join(EMPA_DIR, "empa__ccid*")) if os.path.isdir(d))
+    print(f"Found {len(cell_dirs)} cell directories in '{EMPA_DIR}'")
+    print(f"Target: SOH in [{SOH_MIN}, {SOH_MAX}], C-rate [{C_RATE_MIN}, {C_RATE_MAX}], "
+          f"MAX_CYCLES_PER_CELL={MAX_CYCLES_PER_CELL}\n")
 
     all_rows = []
     n_lfp_cells = n_nmc_cells = 0
@@ -219,7 +237,7 @@ def main():
                 n_nmc_cells += 1
 
     if not all_rows:
-        print("\nNo matching cycles found anywhere.")
+        print("\nNo matching cycles found anywhere -- adjust SOH or C-rate filters.")
         return
 
     combined = pd.concat(all_rows, ignore_index=True)
@@ -229,10 +247,10 @@ def main():
     n_variations = combined["Variation_ID"].nunique()
     print(f"\n{'=' * 70}")
     print(f"-> {OUT_RAW_CSV}")
-    print(f"   {n_variations} real SOC-sweep variants kept "
+    print(f"   {n_variations} real discharge cycles kept "
           f"({n_lfp_cells} LFP cells, {n_nmc_cells} NMC cells contributing), "
           f"{len(combined)} rows")
-    print(combined.groupby(["Chemistry", "Initial_SOC"])["Variation_ID"].nunique())
+    print(combined.groupby("Chemistry")["Variation_ID"].nunique())
 
 
 if __name__ == "__main__":

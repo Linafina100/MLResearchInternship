@@ -17,9 +17,7 @@ ml_pipeline.py             # Trains + evaluates Random Forest / XGBoost on those
 models/                    # Tracked, trained model artifacts (scaler, imputer, encoder, feature list)
 data/                      # Gitignored: all simulation/feature/plot output -- see data/README.md
 experiments/               # Numbered, self-contained experiments -- see experiments/README.md
-optimize_empa/             # Completed: negative-electrode-balance + ratio-to-median tuning for EMPA
-optimize_empa_2/           # Colleagues' shared EMPA SOC-sweep pipeline (not ours to restructure)
-optimize_empa_low_soc/     # Active: low-SOC optimization campaign built on optimize_empa_2
+optimize_empa/             # Active low-SOC optimization campaign; base_pipeline/ is colleagues' shared EMPA pipeline
 ```
 
 ### Root pipeline

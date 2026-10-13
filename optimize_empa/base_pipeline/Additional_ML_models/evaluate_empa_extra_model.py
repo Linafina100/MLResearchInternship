@@ -18,7 +18,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 
 sys.path.insert(0, PROJECT_DIR)  # for root feature_engineering.py
 

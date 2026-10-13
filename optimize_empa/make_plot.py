@@ -58,7 +58,7 @@ def main():
 
     ax.set_xlabel("Initial SOC (fraction of the cell's own capacity remaining at test time)")
     ax.set_ylabel("XGBoost balanced accuracy (%)")
-    ax.set_title("optimize_empa_low_soc: campaign progress\n(EMPA real-data sim-to-real sweep, XGBoost)")
+    ax.set_title("optimize_empa: campaign progress\n(EMPA real-data sim-to-real sweep, XGBoost)")
     ax.set_xlim(1.05, 0.0)
     ax.set_ylim(0, 105)
     ax.grid(True, alpha=0.3)

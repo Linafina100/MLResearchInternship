@@ -1,6 +1,11 @@
 # optimize_empa/
 
-Completed campaign (merged to main). One attempt,
-`experiment/01_ratio_to_median_baseline/`, which validated the
-negative-electrode-balance fix combined with ratio-to-median scale-invariant
-features. See `RESULTS.md` for the full writeup.
+Active low-SOC optimization campaign built on `base_pipeline/`'s shared
+EMPA SOC-sweep pipeline. Five attempts so far (01-05); current best is
+`experiment/05_stable_median_reference/`. See the top-level `RESULTS.md`
+for the full attempt log and campaign-progress plot.
+
+(A separate, earlier, now-completed campaign used to live at this path
+-- negative-electrode-balance + ratio-to-median tuning, whose single
+validated finding was carried forward as this campaign's attempt 01
+baseline. See `experiment/01_baseline_carryover/RESULTS.md`.)
