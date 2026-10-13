@@ -68,7 +68,7 @@ def main():
                 fontsize=9.5, color=COLOR_OVERALL, ha="center",
                 arrowprops=dict(arrowstyle="->", color=COLOR_OVERALL, lw=1.2))
 
-    ax.set_xlabel("Remaining charge when tested (% of the battery's own capacity)", fontsize=11)
+    ax.set_xlabel("Remaining charge (SOC, State of Charge) when tested (% of the battery's own capacity)", fontsize=11)
     ax.set_ylabel("Correct classification rate (%)", fontsize=11)
 
     ax.set_xlim(102, 3)
@@ -84,7 +84,7 @@ def main():
     fig.suptitle("Telling LFP and NMC batteries apart, at any charge level",
                  fontsize=15, fontweight="bold", y=0.985)
     fig.text(0.5, 0.935,
-             "Validated against real discharge data from 199 physical EMPA battery cells",
+             "Validated against 12,750 real discharge cycles from 199 physical EMPA battery cells",
              ha="center", fontsize=10, color="#495057")
 
     plt.tight_layout(rect=(0, 0, 1, 0.92))

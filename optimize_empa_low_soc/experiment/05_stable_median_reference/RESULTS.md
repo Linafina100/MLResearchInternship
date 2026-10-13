@@ -2,7 +2,7 @@
 
 ## For stakeholders
 
-![LFP batteries are identified correctly at every charge level tested; NMC detection stays above 90% down to 10% remaining charge, then drops to 60% at 5%; overall accuracy stays above 95% down to 10% charge remaining](outputs/plots/stakeholder_summary.png)
+![LFP batteries are identified correctly at every charge level (SOC) tested; NMC detection stays above 90% down to 10% remaining charge, then drops to 60% at 5%; overall accuracy stays above 95% down to 10% charge remaining. Validated against 12,750 real discharge cycles from 199 physical EMPA battery cells](outputs/plots/stakeholder_summary.png)
 
 LFP batteries are identified correctly at every charge level tested, no
 exceptions. NMC detection is what limits performance at very low
