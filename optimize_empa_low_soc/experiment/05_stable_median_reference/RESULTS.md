@@ -1,5 +1,17 @@
 # optimize_empa_low_soc, attempt 05: stable median reference
 
+## For stakeholders
+
+![LFP batteries are identified correctly at every charge level tested; NMC detection stays above 90% down to 10% remaining charge, then drops to 60% at 5%; overall accuracy stays above 95% down to 10% charge remaining](outputs/plots/stakeholder_summary.png)
+
+LFP batteries are identified correctly at every charge level tested, no
+exceptions. NMC detection is what limits performance at very low
+charge -- still over 90% reliable with only 10% charge remaining, but
+it drops off sharply below that (60% at 5% remaining, close to a coin
+flip). For a sorting line where batteries arrive at an unknown charge
+level, this means: **highly reliable chemistry sorting down to roughly
+10% remaining charge; treat results below that with caution.**
+
 ## The question this answers
 
 After correcting the "hybrid" premise (campaign index), the one
