@@ -17,7 +17,7 @@ Produces (date-stamped so a rerun doesn't overwrite a prior one):
    (2.5-3.0V) per-bin coverage and mean dV/dQ magnitude, real vs.
    synthetic, both chemistries.
 
-Usage: RUN_LABEL=<synthetic run> python3 make_main_pipeline_plots.py
+Usage: RUN_LABEL=<synthetic run> python3 tools/make_main_pipeline_plots.py
        (defaults to RUN_LABEL=main_pipeline_<today's date>)
 """
 import os
@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXP07_DIR = os.path.join(PROJECT_DIR, "experiments", "07_09_19_early_real_data_validation", "07_real_lfp_nmc_test")
 sys.path.insert(0, PROJECT_DIR)
 sys.path.insert(0, EXP07_DIR)

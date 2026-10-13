@@ -34,7 +34,7 @@ feature_engineering.py's create_features_by_voltage_bins unchanged, so
 the numbers match what every sim-to-real experiment's evaluate script
 would compute.
 
-Usage: python3 make_pipeline_fixes_report.py
+Usage: python3 tools/make_pipeline_fixes_report.py
 Output: data/simulating_problems/pipeline_fixes_report_<date>.html
 """
 import os
@@ -47,7 +47,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_DIR)
 from feature_engineering import create_features_by_voltage_bins
 
