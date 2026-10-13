@@ -31,7 +31,7 @@ from xgboost import XGBClassifier
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
-EXP07_DIR = os.path.join(PROJECT_DIR, "experiments", "07_real_lfp_nmc_test")
+EXP07_DIR = os.path.join(PROJECT_DIR, "experiments", "07_09_19_early_real_data_validation", "07_real_lfp_nmc_test")
 
 sys.path.insert(0, PROJECT_DIR)   # for root ml_pipeline.py and feature_engineering.py
 sys.path.insert(0, EXP07_DIR)     # for parse_real_lfp.py / parse_real_nmc.py

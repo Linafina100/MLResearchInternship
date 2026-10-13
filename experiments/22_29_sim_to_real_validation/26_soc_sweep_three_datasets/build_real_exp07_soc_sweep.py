@@ -45,7 +45,7 @@ import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
-EXP07_DIR = os.path.join(PROJECT_DIR, "experiments", "07_real_lfp_nmc_test")
+EXP07_DIR = os.path.join(PROJECT_DIR, "experiments", "07_09_19_early_real_data_validation", "07_real_lfp_nmc_test")
 sys.path.insert(0, EXP07_DIR)
 sys.path.insert(0, SCRIPT_DIR)
 
