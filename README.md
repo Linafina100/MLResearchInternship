@@ -15,8 +15,12 @@ simulate_batteries.py      # Simulates LFP/NMC discharge curves (PyBaMM), the "m
 feature_engineering.py     # Extracts dV/dQ voltage-bin features from simulated/raw discharge data
 ml_pipeline.py             # Trains + evaluates Random Forest / XGBoost on those features
 models/                    # Tracked, trained model artifacts (scaler, imputer, encoder, feature list)
-data/                      # Gitignored: all simulation/feature/plot output, regenerated per run
-experiments/               # Numbered, self-contained experiments -- see below
+tools/                     # Reporting/diagnostic scripts, not part of the core 3-script pipeline
+data/                      # Gitignored: all simulation/feature/plot output -- see data/README.md
+experiments/               # Numbered, self-contained experiments -- see experiments/README.md
+optimize_empa/             # Completed: negative-electrode-balance + ratio-to-median tuning for EMPA
+optimize_empa_2/           # Colleagues' shared EMPA SOC-sweep pipeline (not ours to restructure)
+optimize_empa_low_soc/     # Active: low-SOC optimization campaign built on optimize_empa_2
 ```
 
 ### Root pipeline
@@ -49,28 +53,18 @@ No lockfile is currently checked in. The pipeline imports: `pybamm`,
 
 ## Experiments
 
-Each `experiments/NN_<name>/` folder is a self-contained variation on the
-main pipeline -- usually its own `RESULTS.md` write-up, plus one or more
-scripts that either fork the root pipeline's simulation/feature logic or
-reuse it directly and just sweep a parameter. Numbering collides
-occasionally when multiple people add a folder independently; always check
-`ls experiments/` on a fresh pull before assigning a new number, and prefer
-renumbering whichever folder nothing else references by path over one that
-other code imports.
+`experiments/` holds numbered, self-contained variations on the main
+pipeline, grouped thematically into folders like
+`20_21_diffusivity_ocp_tuning/` -- each leaf experiment has its own
+`RESULTS.md` write-up, plus one or more scripts that either fork the root
+pipeline's simulation/feature logic or reuse it directly and just sweep a
+parameter. See `experiments/README.md` for the full index of groups and
+what each one covers; numbering collides occasionally when multiple
+people add a folder independently, so always check `ls experiments/` on a
+fresh pull before assigning a new number.
 
-| # | Folder | What it does |
-|---|---|---|
-| 01 | `01_leakage_fix_20_percent_coverage` | Original SOC-availability sweep (pulse protocol); introduced the `>=20%` mutual-coverage leakage fix that drops voltage bins only one chemistry ever reaches. |
-| 02 | `02_avoid_nan_soc_binning` | Fixes a NaN-handling bug in SOC binning from experiment 01. |
-| 03 | `03_continuous_discharge_soc_sweep` | Replaces the GITT pulse protocol with continuous constant-current discharge (fixed 0.6C) and re-runs the same 4-interval SOC sweep; this became the main pipeline. |
-| 04 | `04_pulse_variable_discharge_soc_sweep` | Pulse protocol with a per-battery randomized discharge rate; found this collapses signal almost entirely due to a sampling-resolution problem. |
-| 05 | `05_bin_interpolation_fix` | Attempted fix for 04's sampling-resolution problem (interpolate dV/dQ across every bin a pulse spans); found it doesn't help and actively hurts intervals that already worked. |
-| 06 | `06_cont_random_discharge_soc_sweep` | Continuous discharge + randomized C-rate (0.2-1.0C) + lower voltage cutoffs (LFP 1.5V/NMC 1.8V, a divergence from the cutoffs used elsewhere). Held up well unlike 04, since continuous discharge doesn't have the pulse protocol's sampling-resolution issue. |
-| 07 | `07_real_lfp_nmc_test` | Evaluates the trained pipeline against real LFP/NMC lab data. |
-| 08 | `08_pulse_protocol_archive` | Archived copy of the original GITT pulse-protocol scripts, kept because experiments 01 and 04 still import it directly. |
-| 09 | `09_calce_data_integration` | Integrates real CALCE experimental discharge data (`data/calce_experiment_data/`) into the pipeline alongside synthetic simulations. |
-| 10 | `10_constant_current_three` | Continuous discharge at three discrete, predefined C-rates (0.2C/0.5C/1.0C) per battery rather than one random draw. |
-| 11 | `11_voltage_cutoff_comparison` | Isolates experiment 06's voltage-cutoff change from its C-rate randomization by comparing the original cutoffs (1.8V/2.3V) against 06's lower ones (1.5V/1.8V) on an otherwise-identical run. Surfaced a solver-termination artifact that inflates part of experiment 03's reported accuracy. |
-| 12 | `12_exclude_termination_artifact_bins` | Quantifies how much of experiment 03's accuracy the artifact found in 11 actually accounts for, by re-training with the affected bins excluded. Only one of four SOC intervals turns out to be materially inflated. |
-| 16 | `16_low_voltage_only_sim_to_real` | Tests training/testing only on the real-world-relevant low-voltage tail (2.5-3.0V) using synthetic data simulated at an artificially lowered cutoff, so the solver-termination artifact lands outside the target zone. Confirms the technique isolates the artifact as intended, but accuracy stays at the sim-to-real floor (~24%) because synthetic NMC data is otherwise almost absent in that zone, independent of the cutoff. |
-| 17 | `17_high_soh_low_crate_sim_to_real` | Tests whether healthier SOH (0.8-1.0) and a much gentler C-rate (0.1-0.2) fix experiment 16's NMC coverage gap in the target zone. Refuted, to the decimal (24.33% accuracy, identical to experiment 16) -- NMC's near-total absence from that zone is unrelated to discharge rate or SOH. |
+## Data
+
+All simulation/feature/plot output is gitignored and regenerated per run
+under `data/`. See `data/README.md` for the full index of what each
+folder contains and which script produces it.
