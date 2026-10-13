@@ -24,7 +24,8 @@ regenerated or modified without touching the colleagues' pipeline.
 | 01 | `experiment/01_baseline_carryover/` | Carry over the bug-fixed, full-scale-verified `optimize_empa_2` pipeline unchanged, as this campaign's starting point | XGBoost: 95.7-99.9% from SOC 1.0 down to 0.2, collapses to chance at 0.15 and below. Random Forest: chance-level (majority-class prediction) at every SOC point | Baseline, verified (re-run from scratch in this new, self-contained location; reproduces the merge work's full-scale numbers exactly -- see its own RESULTS.md) |
 | 02 | `experiment/02_negative_electrode_balance/` | LFP negative-electrode capacity rebalance (factor=0.7, carried over from `optimize_empa/experiment/01_...`), targeting the LFP OCP calibration gap root-caused in attempt 01 | XGBoost: working range extended a full SOC step lower, now 95.7-99.9% down to **0.15** (was 0.2). Random Forest: recovered at SOC 1.0/0.9 (99.87%, was chance), still chance-level 0.8 and below. Both models still chance below 0.1 | Verified at full scale; a real, partial improvement -- see its own RESULTS.md for the full before/after table and the sanity-check diagnostic that preceded the full run |
 | 03 | `experiment/03_tuned_negative_electrode_factor/` | Swept `NEG_CAPACITY_FACTOR` (0.4-0.8) against this pipeline's own calibration gap instead of assuming attempt 02's borrowed 0.7 was optimal; found 0.45-0.47 fits real LFP noticeably better | Random Forest partially recovers at SOC=0.8 (LFP recall 0.000 -> 0.281). XGBoost essentially unchanged (already saturated 1.0-0.15 with the looser factor) -- no further SOC-range extension. Diminishing returns from this lever alone | Verified at full scale -- see its own RESULTS.md; recommends a different/additional lever next (ratio-to-median scale-invariant features) |
-| 04 | `experiment/04_ratio_to_median_features/` | Ratio-to-median scale-invariant features (each bin's dV/dQ divided by that row's own median), layered on attempt 03's synthetic data -- a feature-representation fix rather than a physics fix | Mixed: Random Forest regresses to chance everywhere it was working in attempt 03 (1.0/0.9/0.8). XGBoost breaks through at the lowest SOC point in the whole campaign: Initial_SOC=0.05 goes from chance to **81.81%** balanced accuracy (LFP recall 0.000 -> 1.000) | Verified at full scale -- see its own RESULTS.md; neither attempt 03 nor 04 alone is best across the whole sweep, suggesting a per-bucket hybrid next |
+| 04 | `experiment/04_ratio_to_median_features/` | Ratio-to-median scale-invariant features (each bin's dV/dQ divided by that row's own median), layered on attempt 03's synthetic data -- a feature-representation fix rather than a physics fix | Mixed: Random Forest regresses to chance everywhere it was working in attempt 03 (1.0/0.9/0.8). XGBoost breaks through at the lowest SOC point in the whole campaign: Initial_SOC=0.05 goes from chance to **81.81%** balanced accuracy (LFP recall 0.000 -> 1.000) | Verified at full scale -- see its own RESULTS.md. Head-to-head check against attempt 03 (below) showed XGBoost dominates regardless of feature set -- no hybrid needed |
+| 05 | `experiment/05_stable_median_reference/` | Root-caused and fixed why Initial_SOC=0.1 stayed at chance while the more extreme 0.05 worked: ratio-to-median's per-row median was computed over whatever bins that row had, which varies by SOC-truncation depth. Fixed the median denominator to a consistent reference bin set | **Initial_SOC=0.1: chance (48.98%) -> 95.17%** (LFP recall 0.000 -> 1.000) -- the campaign's biggest single jump. Real but modest cost elsewhere: 0.3/0.2/0.15 drop from ~100% to 96-99% (still solid); 0.05 dips to 79.84% | Verified at full scale -- see its own RESULTS.md; this campaign's current best, net positive for the "lowest possible SOC" goal |
 
 ## Current best, and a correction to attempt 04's "next steps"
 
@@ -60,19 +61,17 @@ is already this campaign's best unified result across the sweep** --
 no hybrid needed. Random Forest can be dropped from future attempts;
 it's dominated by XGBoost in every configuration tested so far.
 
-**Remaining open question, not yet resolved**: Initial_SOC=0.1 stays
-at chance for XGBoost in both attempts, while the more extreme
-Initial_SOC=0.05 works (81.81%) -- counter-intuitive, since 0.1 is the
-easier extrapolation case (closer to the synthetic generator's own
-range) and uses literally the same training data (both buckets fall
-back to the full 498-battery synthetic set). A quick follow-up check
-found the real data's own LFP-vs-NMC separation pattern is
-qualitatively similar at both SOC points (LFP's ratio-to-median
-magnitude exceeds NMC's at the same bins in both cases) -- so this
-isn't an "0.1 has no signal" problem, it's a decision-boundary
-placement issue relative to where each bucket's real data happens to
-sit. Not root-caused further; flagged for future work rather than
-chased down an open-ended rabbit hole.
+**The Initial_SOC=0.1 anomaly was root-caused and fixed in attempt 05.**
+Ratio-to-median (attempt 04) normalizes each row by its own median
+over *whatever bins that row happens to have* -- and which bins a real
+cycle has depends on how deep its SOC truncation goes (confirmed
+directly: real LFP has 100% coverage of the 3.2-3.1V bin at SOC=0.1,
+but 0% coverage of that same bin at SOC=0.05). So the normalizing
+denominator was itself SOC-truncation-dependent. Fixing the median
+reference to a consistently-covered bin subset (2.6V-3.1V) took
+Initial_SOC=0.1 from chance (48.98%) to **95.17%** -- at a real but
+modest cost elsewhere (0.3/0.2/0.15 drop from ~100% to 96-99%, still
+solid; 0.05 dips slightly to 79.84%). See `experiment/05_stable_median_reference/RESULTS.md`.
 
 ## Background
 
