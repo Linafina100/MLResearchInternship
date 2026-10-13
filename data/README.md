@@ -73,8 +73,21 @@ not strictly by producing-group.)
 |---|---|
 | `32_fixed_voltage_cutoff_synthetic_v1` | `simulate_batteries_continuous_discharge_truncated.py` (fixed-cutoff variant) |
 | `32_real_empa_fixed_cutoff`, `32_real_exp07_fixed_cutoff`, `32_real_snl_fixed_cutoff` | this experiment's real-data build scripts, one per dataset |
-| `32_lfp_negative_electrode_balance` | `simulate_lfp_negative_electrode_balance.py` -- LFP-only resimulation with the validated negative-electrode capacity fix |
-| `32_synthetic_lfp_balance_fix_combined` | `combine_lfp_fix_with_baseline_nmc.py` -- combines the fix above with unmodified baseline NMC |
+| `32_lfp_negative_electrode_balance` | `data_generation/simulate_lfp_negative_electrode_balance.py` -- LFP-only resimulation with the validated negative-electrode capacity fix |
+| `32_synthetic_lfp_balance_fix_combined` | `data_generation/combine_lfp_fix_with_baseline_nmc.py` -- combines the fix above with unmodified baseline NMC |
+
+**`32_fixed_voltage_cutoff_soc_sweep/`** (this experiment's own namespace -- added when its per-SOC-point evaluators' raw output was moved out of `experiments/` to match every other experiment's convention)
+| Folder | Produced by |
+|---|---|
+| `per_soc_raw/sim_and_real_raw_{exp07,EMPA,SNL}_soc_*.csv` + `per_soc_raw/features/` | `evaluation_baseline/evaluate_per_soc_point_models.py` |
+| `per_soc_raw/sim_and_real_raw_ratiomed_{exp07,EMPA}_soc_*.csv` + `per_soc_raw/features_ratio_to_median/` | `evaluation_ratio_to_median/evaluate_per_soc_point_models_ratio_to_median.py` |
+| `tmp_avg_dvdq/` | `diagnostics/plot_average_discharge_curves.py`'s scratch working dir |
+| `tmp_scale_invariant_smoke/` | `diagnostics/smoke_test_scale_invariant_features.py`'s scratch working dir |
+
+(A twelfth set, `sim_and_real_raw_balancefix_EMPA_soc_*.csv`, was deleted
+during this move -- confirmed via repo-wide grep that no script anywhere
+produces or reads files with that prefix; it was dead output from some
+earlier, since-removed version of the evaluator.)
 
 ## 3. Orphaned: former `optimize_empa/` campaign data (producing folder deleted)
 

@@ -36,7 +36,7 @@ LFP only (NMC untouched) -- mirrors
 experiments/22_29_sim_to_real_validation/29_snl_lfp_ocp_recalibration/diagnose_snl_lfp_ocp_rate_constant.py's
 structure.
 
-Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/diagnose_empa_negative_electrode_balance.py
+Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/diagnostics/diagnose_empa_negative_electrode_balance.py
 """
 import os
 
@@ -45,7 +45,7 @@ import pandas as pd
 import pybamm
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 
 V_MIN = 1.5  # natural/deep cutoff for the diagnostic -- lets us see the full curve shape, not just where EMPA happens to stop
 TARGET_CROSSING_DVDQ = -4.0  # real EMPA LFP crosses this around 2.65V (interpolated between 2.7-2.6V's -4.10 and 2.8-2.7V's -2.98)

@@ -35,7 +35,7 @@ plot_real_discharge_curves_comparison.py. ALL traces used for both
 averages (not subsampled -- subsampling was only for individual-trace
 plot readability elsewhere).
 
-Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/plot_average_discharge_curves.py
+Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/diagnostics/plot_average_discharge_curves.py
 Output: experiments/32_fixed_voltage_cutoff_soc_sweep/plots/average_discharge_curves.png
 """
 import os
@@ -48,7 +48,8 @@ import numpy as np
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+EXPERIMENT_DIR = os.path.dirname(SCRIPT_DIR)  # shared plots/ lives at the experiment's top level
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 sys.path.insert(0, PROJECT_DIR)
 
 from feature_engineering import create_features_by_voltage_bins
@@ -65,8 +66,8 @@ COLORS = {"exp07": "#8E44AD", "EMPA": "#2A78D6", "SNL": "#1D9A6C"}
 N_GRID_POINTS = 300
 MIN_TRACES_FOR_AVERAGE = 5  # stop the average once fewer than this many cells still have data at that Q
 
-TMP_DIR = os.path.join(SCRIPT_DIR, "_tmp_avg_dvdq")
-OUT_PNG = os.path.join(SCRIPT_DIR, "plots", "average_discharge_curves.png")
+TMP_DIR = os.path.join(PROJECT_DIR, "data", "32_fixed_voltage_cutoff_soc_sweep", "tmp_avg_dvdq")
+OUT_PNG = os.path.join(EXPERIMENT_DIR, "plots", "average_discharge_curves.png")
 
 
 def load_soc1_slice(csv_path):

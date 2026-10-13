@@ -25,7 +25,7 @@ Real traces subsampled to MAX_TRACES_PLOTTED per panel (EMPA alone has
 tens of thousands at this SOC point), low alpha, same convention as
 experiment 31's make_curve_comparison_plots.py.
 
-Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/plot_real_discharge_curves_comparison.py
+Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/diagnostics/plot_real_discharge_curves_comparison.py
 Output: experiments/32_fixed_voltage_cutoff_soc_sweep/plots/real_discharge_curves_comparison.png
 """
 import os
@@ -37,7 +37,8 @@ import numpy as np
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+EXPERIMENT_DIR = os.path.dirname(SCRIPT_DIR)  # shared plots/ lives at the experiment's top level
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 
 REAL_CSVS = {
     "exp07": os.path.join(PROJECT_DIR, "data", "26_real_exp07_soc_sweep", "raw", "real_exp07_soc_sweep_raw.csv"),
@@ -50,7 +51,7 @@ RNG = np.random.default_rng(42)
 
 COLORS = {"exp07": "#8E44AD", "EMPA": "#2A78D6", "SNL": "#1D9A6C"}
 
-OUT_PNG = os.path.join(SCRIPT_DIR, "plots", "real_discharge_curves_comparison.png")
+OUT_PNG = os.path.join(EXPERIMENT_DIR, "plots", "real_discharge_curves_comparison.png")
 
 
 def load_soc1_slice(csv_path):

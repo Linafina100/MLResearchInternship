@@ -64,8 +64,8 @@ fold's real rows. Also records per-dataset total unique physical cells
 and total discharge cycles (pooled across all 12 Initial_SOC points) for
 the sweep plot's legend.
 
-Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/evaluate_per_soc_point_models.py
-       python3 experiments/32_fixed_voltage_cutoff_soc_sweep/evaluate_per_soc_point_models.py SNL   # just one dataset
+Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/evaluation_baseline/evaluate_per_soc_point_models.py
+       python3 experiments/32_fixed_voltage_cutoff_soc_sweep/evaluation_baseline/evaluate_per_soc_point_models.py SNL   # just one dataset
 """
 import json
 import os
@@ -79,7 +79,7 @@ from sklearn.metrics import balanced_accuracy_score, recall_score
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 sys.path.insert(0, PROJECT_DIR)
 
 from feature_engineering import create_features_by_voltage_bins
@@ -94,7 +94,9 @@ DATASETS = {
     "SNL": os.path.join(PROJECT_DIR, "data", "27_real_snl_soc_sweep", "raw", "real_snl_soc_sweep_raw.csv"),
 }
 
-FEATURES_DIR = os.path.join(SCRIPT_DIR, "features")
+PER_SOC_RAW_DIR = os.path.join(PROJECT_DIR, "data", "32_fixed_voltage_cutoff_soc_sweep", "per_soc_raw")
+os.makedirs(PER_SOC_RAW_DIR, exist_ok=True)
+FEATURES_DIR = os.path.join(PER_SOC_RAW_DIR, "features")
 RESULTS_JSON = os.path.join(SCRIPT_DIR, "per_soc_results.json")
 
 
@@ -113,7 +115,7 @@ def count_cells_and_cycles(real_csv):
 def build_fold_csv(dataset_name, soc, synth_df, real_df):
     # Always overwritten (never skip-if-exists) -- see experiment 28's
     # docstring for why that caching pattern caused stale-result bugs.
-    fold_csv = os.path.join(SCRIPT_DIR, f"sim_and_real_raw_{dataset_name}_soc_{soc}.csv")
+    fold_csv = os.path.join(PER_SOC_RAW_DIR, f"sim_and_real_raw_{dataset_name}_soc_{soc}.csv")
     synth_fold = synth_df[synth_df["Initial_SOC"] == soc].copy()
     real_fold = real_df[real_df["Initial_SOC"] == soc].copy()
     synth_fold["DataKind"] = "synthetic"

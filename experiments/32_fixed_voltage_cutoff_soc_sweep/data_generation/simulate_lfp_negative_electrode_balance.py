@@ -17,7 +17,7 @@ only SOLVES the LFP side. The output is combined with the EXISTING,
 UNMODIFIED NMC rows from data/26_soh_range_continuous_discharge_truncated_v1/
 by combine_lfp_fix_with_baseline_nmc.py -- no NMC resimulation needed.
 
-Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/simulate_lfp_negative_electrode_balance.py
+Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/data_generation/simulate_lfp_negative_electrode_balance.py
 """
 import os
 import sys
@@ -27,7 +27,7 @@ import numpy as np
 import random
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 EXP26_DIR = os.path.join(PROJECT_DIR, "experiments", "22_29_sim_to_real_validation", "26_soc_sweep_three_datasets")
 sys.path.insert(0, EXP26_DIR)
 from soc_truncation import truncate_at_soc

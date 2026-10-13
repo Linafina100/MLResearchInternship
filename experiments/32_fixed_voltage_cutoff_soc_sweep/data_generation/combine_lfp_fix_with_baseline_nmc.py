@@ -6,13 +6,13 @@ EXISTING, UNMODIFIED NMC rows from
 data/26_soh_range_continuous_discharge_truncated_v1/ -- NMC was never
 touched by this fix, so it's reused directly rather than resimulated.
 
-Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/combine_lfp_fix_with_baseline_nmc.py
+Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/data_generation/combine_lfp_fix_with_baseline_nmc.py
 """
 import os
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 
 BASELINE_CSV = os.path.join(PROJECT_DIR, "data", "26_soh_range_continuous_discharge_truncated_v1", "raw", "advanced_synthetic_battery_data.csv")
 LFP_FIX_CSV = os.path.join(PROJECT_DIR, "data", "32_lfp_negative_electrode_balance", "raw", "lfp_only_balance_fix.csv")

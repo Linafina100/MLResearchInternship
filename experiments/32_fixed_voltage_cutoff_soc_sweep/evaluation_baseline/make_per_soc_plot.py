@@ -1,17 +1,16 @@
 """
-Experiment 32: plots per-SOC-specialized Random Forest balanced accuracy
-vs. Initial_SOC for exp07 and EMPA ONLY (SNL excluded -- see
-evaluate_per_soc_point_models_ratio_to_median.py's docstring for why),
-using the new RATIO-TO-MEDIAN scale-invariant feature (each bin's dV/dQ
-divided by that sample's own median dV/dQ across its own observed bins)
-instead of absolute dV/dQ. Reads
-evaluate_per_soc_point_models_ratio_to_median.py's saved
-per_soc_results_ratio_to_median.json (run that first). Legend entries
-include each dataset's total unique physical cells and total discharge
-cycles (pooled across all 12 Initial_SOC points).
+Experiment 32 (rebuilt, with the negative-electrode-balance fix): plots
+per-SOC-specialized Random Forest balanced accuracy vs. Initial_SOC for
+exp07, EMPA, and SNL -- natural end-of-discharge cutoff, no forced
+voltage floor, LFP's negative-electrode capacity rebalanced (factor=0.7)
+to fix a real dV/dQ shape mismatch against real EMPA LFP cells (see
+RESULTS.md). Reads evaluate_per_soc_point_models.py's saved
+per_soc_results.json (run that first). Legend entries include each
+dataset's total unique physical cells and total discharge cycles (pooled
+across all 12 Initial_SOC points).
 
-Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/make_per_soc_plot_ratio_to_median.py
-Output: experiments/32_fixed_voltage_cutoff_soc_sweep/plots/per_soc_accuracy_ratio_to_median.png
+Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/evaluation_baseline/make_per_soc_plot.py
+Output: experiments/32_fixed_voltage_cutoff_soc_sweep/plots/per_soc_accuracy.png
 """
 import json
 import os
@@ -21,14 +20,16 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULTS_JSON = os.path.join(SCRIPT_DIR, "per_soc_results_ratio_to_median.json")
-OUT_PNG = os.path.join(SCRIPT_DIR, "plots", "per_soc_accuracy_ratio_to_median.png")
+EXPERIMENT_DIR = os.path.dirname(SCRIPT_DIR)  # shared plots/ lives at the experiment's top level
+RESULTS_JSON = os.path.join(SCRIPT_DIR, "per_soc_results.json")
+OUT_PNG = os.path.join(EXPERIMENT_DIR, "plots", "per_soc_accuracy.png")
 
 SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
 STYLE = {
     "exp07": {"color": "#8E44AD"},
     "EMPA": {"color": "#2A78D6"},
+    "SNL": {"color": "#1D9A6C"},
 }
 
 
@@ -57,7 +58,7 @@ def main():
     ax.set_xlabel("Initial SOC (fraction of the cell's own capacity remaining at test time, natural cutoff)")
     ax.set_ylabel("Balanced accuracy (%)")
     ax.set_title("Per-SOC-specialized Random Forest balanced accuracy vs. starting charge level\n"
-                 "(ratio-to-median scale-invariant feature -- exp07 / EMPA only, SNL excluded)")
+                 "(natural cutoff + LFP negative-electrode balance fix -- exp07 / EMPA / SNL)")
     ax.set_xlim(1.05, 0.0)
     ax.set_ylim(0, 105)
     ax.grid(True, alpha=0.3)

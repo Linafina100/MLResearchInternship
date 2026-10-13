@@ -42,7 +42,7 @@ closer together (successful alignment) while still keeping LFP and NMC
 visibly distinct within each dataset (chemistry signal preserved, not
 washed out).
 
-Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/smoke_test_scale_invariant_features.py
+Usage: python3 experiments/32_fixed_voltage_cutoff_soc_sweep/diagnostics/smoke_test_scale_invariant_features.py
 Output: experiments/32_fixed_voltage_cutoff_soc_sweep/plots/smoke_test_scale_invariant_features.png
 """
 import os
@@ -55,7 +55,8 @@ import numpy as np
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+EXPERIMENT_DIR = os.path.dirname(SCRIPT_DIR)  # shared plots/ lives at the experiment's top level
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 sys.path.insert(0, PROJECT_DIR)
 
 from feature_engineering import create_features_by_voltage_bins
@@ -71,8 +72,8 @@ COLORS = {"exp07": "#8E44AD", "EMPA": "#2A78D6", "SNL": "#1D9A6C"}
 
 SMOKE_TEST_SOC = float(sys.argv[1]) if len(sys.argv) > 1 else 0.5  # partial window -- the realistic production case, not SOC=1.0
 
-TMP_DIR = os.path.join(SCRIPT_DIR, "_tmp_scale_invariant_smoke")
-OUT_PNG = os.path.join(SCRIPT_DIR, "plots", f"smoke_test_scale_invariant_features_v2_ratio_soc_{SMOKE_TEST_SOC}.png")
+TMP_DIR = os.path.join(PROJECT_DIR, "data", "32_fixed_voltage_cutoff_soc_sweep", "tmp_scale_invariant_smoke")
+OUT_PNG = os.path.join(EXPERIMENT_DIR, "plots", f"smoke_test_scale_invariant_features_v2_ratio_soc_{SMOKE_TEST_SOC}.png")
 
 
 def bin_midpoint(col):
