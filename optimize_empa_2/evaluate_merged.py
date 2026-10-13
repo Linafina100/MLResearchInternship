@@ -66,8 +66,57 @@ Explicitly NOT adopted:
   need its own validation before merging, not a drop-in compatible
   change with the rest of this pipeline's features.
 
+5. Chunked real-data feature extraction. At build_real_empa_merged.py's
+   full default scale (MAX_CYCLES_PER_CELL=600), real_empa_raw.csv is
+   ~12M rows / ~1.7GB -- loading that whole thing into one DataFrame
+   and running the shared feature_engineering.py's sort/vectorized-diff/
+   pivot pipeline on it risked repeating an out-of-memory crash seen
+   earlier in this project on a different pipeline. Processed in
+   REAL_CHUNK_ROWS-sized chunks of real Variation_IDs instead: each
+   chunk goes through a small temp CSV and the SAME shared
+   create_features_by_voltage_bins() call everything else uses (its
+   logic is untouched), and only the small, aggregated (one row per
+   battery) result is kept before the next chunk is built -- the large
+   raw chunk is discarded in between. Synthetic data (498 batteries)
+   stays a single pass; it was never the memory risk.
+
 Saves results to sweep_results_merged.json; reuses make_plot.py's
 format (buckets keyed by SOC-as-string under "EMPA").
+
+BUG FOUND AND FIXED during full-scale testing (worth recording -- it
+silently inflated an earlier smoke-scale result to a suspicious
+97.5-99.6% across every bucket): the first version of this script's
+extract_features_with_kind() recomputed Battery_ID itself via
+`raw_df.groupby(GROUPBY_COLS).ngroup()` (default sort=True) to map
+DataKind/Initial_SOC back onto create_features_by_voltage_bins()'s
+output -- but that function assigns its OWN Battery_ID internally via
+`ngroup(sort=False)`. Those are two different numbering schemes for
+the same groups, so DataKind got mapped onto the wrong battery rows
+whenever group-sort-order differed from encounter-order (which it
+generally does). The chunked design above sidesteps this entirely --
+each extraction call now gets homogeneous input (synthetic-only or one
+real chunk), so DataKind is just set directly on that call's own
+output, no external Battery_ID re-derivation needed. Verified the fix:
+re-ran the isolated synthetic-only extraction standalone and confirmed
+it deterministically reports 14 surviving bins (matching this script's
+output) -- the earlier, buggy 8-bin result was an artifact of DataKind
+being scrambled across groups, not a real feature-selection outcome.
+
+HONEST RESULT at the full MAX_CYCLES_PER_CELL=600 scale (151,074 real
+cycles / 12M rows, processed via the chunked path), now that the above
+bug is gone: XGBoost holds up well through Initial_SOC 1.0-0.2
+(95.7-99.9% balanced accuracy) but collapses to chance at 0.15 and
+below. Random Forest predicts the majority class (NMC) almost
+everywhere despite class_weight='balanced' (~49.9-50.0% balanced
+accuracy, LFP_recall=0.000, EVERY bucket) -- not investigated further
+here (would need its own dedicated diagnosis: hyperparameters, the
+now-much-worse real-side class imbalance at this scale, or the wider
+14-bin feature set interacting badly with RF specifically). This
+result is consistent with the rest of this project's documented
+history that low-SOC classification is a genuinely hard, unresolved
+problem -- not something this particular merge fixes, and the earlier
+smoke/cap-20-scale "it works great" result should be disregarded; it
+was built on the bug described above.
 
 Usage: python3 optimize_empa_2/evaluate_merged.py
 """
@@ -95,10 +144,8 @@ from feature_engineering import create_features_by_voltage_bins
 
 SYNTHETIC_RAW_CSV = os.environ.get("SYNTHETIC_RAW_CSV", os.path.join(PROJECT_DIR, "data", "raw", "advanced_synthetic_battery_data.csv"))
 REAL_RAW_CSV = os.environ.get("REAL_RAW_CSV", os.path.join(PROJECT_DIR, "data", "raw", "real_empa_raw.csv"))
-RAW_CSV = os.path.join(SCRIPT_DIR, "sim_and_real_raw_merged.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "features_merged")
 RESULTS_JSON = os.path.join(SCRIPT_DIR, "sweep_results_merged.json")
-GROUPBY_COLS = ['Chemistry', 'Size_Multiplier', 'SOH', 'Initial_SOC', 'Variation_ID']
 
 SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
@@ -114,44 +161,70 @@ SOC_MATCH_TOLERANCE = float(os.environ.get("SOC_MATCH_TOLERANCE", 0.1))
 MIN_MATCHED_TRAIN_ROWS = int(os.environ.get("MIN_MATCHED_TRAIN_ROWS", 50))
 MIN_COVERAGE = 0.2
 
+# Real data at the full MAX_CYCLES_PER_CELL=600 scale (build_real_empa_merged.py's
+# default) is ~12M raw rows / 1.7GB -- loading that, sorting it, and running
+# the shared feature_engineering.py's vectorized diff/pivot pipeline on it as
+# ONE DataFrame risks a repeat of an earlier out-of-memory crash on a
+# different pipeline in this project. Processed in chunks of real
+# Variation_IDs instead: each chunk is written to a small temp CSV, fed
+# through the SAME shared create_features_by_voltage_bins() call used for
+# everything else (no change to its logic, just smaller inputs), and only
+# the resulting (small, one-row-per-battery) feature rows are kept --
+# the large raw chunk is discarded before the next one is built. Synthetic
+# data (498 batteries, never a memory concern) is extracted in one pass.
+REAL_CHUNK_ROWS = int(os.environ.get("REAL_CHUNK_ROWS", 1_000_000))
 
-def build_combined_raw_csv():
-    print(f"Loading synthetic data from '{SYNTHETIC_RAW_CSV}'...")
-    sim_df = pd.read_csv(SYNTHETIC_RAW_CSV)
-    sim_df["DataKind"] = "synthetic"
-    print(f"  -> {len(sim_df)} rows")
 
+def extract_synthetic_features():
+    print(f"Extracting synthetic features from '{SYNTHETIC_RAW_CSV}' (single pass)...")
+    synth_raw = pd.read_csv(SYNTHETIC_RAW_CSV)
+    print(f"  -> {len(synth_raw)} rows")
+    tmp_csv = os.path.join(SCRIPT_DIR, "_tmp_synth_only.csv")
+    synth_raw.to_csv(tmp_csv, index=False)
+    del synth_raw
+    feats = create_features_by_voltage_bins(
+        tmp_csv, output_dir=FEATURES_DIR, min_chemistry_coverage=0.0, exclude_final_transition=True,
+    )
+    os.remove(tmp_csv)
+    feats["DataKind"] = "synthetic"
+    return feats
+
+
+def extract_real_features_chunked():
     print(f"\nLoading real EMPA data from '{REAL_RAW_CSV}'...")
-    real_df = pd.read_csv(REAL_RAW_CSV, low_memory=False)
-    real_df["DataKind"] = "real"
-    print(f"  -> {len(real_df)} rows, {real_df['Variation_ID'].nunique()} real discharge cycles")
+    real_raw = pd.read_csv(REAL_RAW_CSV, low_memory=False)
+    print(f"  -> {len(real_raw)} rows, {real_raw['Variation_ID'].nunique()} real discharge cycles")
 
-    combined = pd.concat([sim_df, real_df], ignore_index=True)
-    combined.to_csv(RAW_CSV, index=False)
-    print(f"\nCombined raw data saved to '{RAW_CSV}': "
-          f"{(combined['DataKind'] == 'synthetic').sum()} synthetic rows, "
-          f"{(combined['DataKind'] == 'real').sum()} real rows")
-    return combined
+    var_ids = real_raw["Variation_ID"].unique()
+    rows_per_cycle = max(1, len(real_raw) // max(1, len(var_ids)))
+    cycles_per_chunk = max(1, REAL_CHUNK_ROWS // rows_per_cycle)
+    n_chunks = max(1, -(-len(var_ids) // cycles_per_chunk))  # ceil div
+    chunks_of_varids = np.array_split(var_ids, n_chunks)
+
+    print(f"  Processing in {n_chunks} chunks (~{cycles_per_chunk} cycles / "
+          f"~{REAL_CHUNK_ROWS} rows each) to bound peak memory...")
+    tmp_csv = os.path.join(SCRIPT_DIR, "_tmp_real_chunk.csv")
+    all_feats = []
+    for i, vids in enumerate(chunks_of_varids):
+        chunk_df = real_raw[real_raw["Variation_ID"].isin(set(vids))]
+        chunk_df.to_csv(tmp_csv, index=False)
+        n_rows_chunk = len(chunk_df)
+        del chunk_df
+        feats = create_features_by_voltage_bins(
+            tmp_csv, output_dir=FEATURES_DIR, min_chemistry_coverage=0.0, exclude_final_transition=True,
+        )
+        feats["DataKind"] = "real"
+        all_feats.append(feats)
+        print(f"  chunk {i+1}/{n_chunks}: {n_rows_chunk} raw rows -> {len(feats)} real batteries")
+    os.remove(tmp_csv)
+    del real_raw
+    return pd.concat(all_feats, ignore_index=True)
 
 
 def extract_features_with_kind():
-    if not os.path.exists(RAW_CSV):
-        build_combined_raw_csv()
-    else:
-        print(f"Note: '{RAW_CSV}' already exists -- reusing it. Delete it to re-build from source.")
-
-    print("\nExtracting RAW features (min_chemistry_coverage=0.0 -- no internal "
-          "pooled synthetic+real filtering; coverage is re-checked below against "
-          "the synthetic/training side only)...")
-    features_df = create_features_by_voltage_bins(
-        RAW_CSV, output_dir=FEATURES_DIR, min_chemistry_coverage=0.0, exclude_final_transition=True,
-    )
-
-    raw_df = pd.read_csv(RAW_CSV, low_memory=False)
-    raw_df['Battery_ID'] = raw_df.groupby(GROUPBY_COLS).ngroup()
-    id_cols = raw_df.drop_duplicates('Battery_ID').set_index('Battery_ID')[['DataKind', 'Initial_SOC']]
-    features_df['DataKind'] = features_df['Battery_ID'].map(id_cols['DataKind'])
-    features_df['Initial_SOC'] = features_df['Battery_ID'].map(id_cols['Initial_SOC'])
+    synth_feats = extract_synthetic_features()
+    real_feats = extract_real_features_chunked()
+    features_df = pd.concat([synth_feats, real_feats], ignore_index=True)
 
     all_v_cols = sorted(
         (c for c in features_df.columns if c.startswith('dV_dQ_V_')),
