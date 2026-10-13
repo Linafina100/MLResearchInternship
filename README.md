@@ -15,7 +15,6 @@ simulate_batteries.py      # Simulates LFP/NMC discharge curves (PyBaMM), the "m
 feature_engineering.py     # Extracts dV/dQ voltage-bin features from simulated/raw discharge data
 ml_pipeline.py             # Trains + evaluates Random Forest / XGBoost on those features
 models/                    # Tracked, trained model artifacts (scaler, imputer, encoder, feature list)
-tools/                     # Reporting/diagnostic scripts, not part of the core 3-script pipeline
 data/                      # Gitignored: all simulation/feature/plot output -- see data/README.md
 experiments/               # Numbered, self-contained experiments -- see experiments/README.md
 optimize_empa/             # Completed: negative-electrode-balance + ratio-to-median tuning for EMPA
