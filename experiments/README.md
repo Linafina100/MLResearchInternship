@@ -12,7 +12,7 @@ thematically. Each leaf folder has its own `RESULTS.md`. See the root
 | `11_15_termination_artifact_investigation/` | 11,12,13,14,15 | Solver-termination artifact: discovery, quantification, fixes, and post-fix hyperparameter tuning | Wiki: |
 | `17_18_nmc_coverage_gap_investigation/` | 17,18,18 | Why synthetic NMC data barely reaches the real target voltage zone | Wiki: |
 | `20_21_diffusivity_ocp_tuning/` | 20,21 | NMC diffusivity fix + LFP OCP tail calibration -- first genuine sim-to-real signal | Wiki: |
-| `22_29_sim_to_real_validation/` | 22-29 | Systematic validation across EMPA/SNL/CALCE real datasets | Wiki: Sim-to-Real Dataset Validation |
+| `22_29_sim_to_real_validation/` | 22-29 | Systematic validation across EMPA/SNL/CALCE real datasets | Wiki: |
 | `30_31_snl_dataset_comparison/` | 30,31 | SNL vs. real-data comparison and curve visualization | Wiki: |
 | `32_fixed_voltage_cutoff_soc_sweep/` | 32 | Per-SOC specialized models + negative-electrode-balance fix + ratio-to-median features -- fed into `optimize_empa/` | Wiki: |
 
