@@ -7,7 +7,7 @@ thematically. Each leaf folder has its own `RESULTS.md`. See the root
 | Folder | Covers | Theme |
 |---|---|---|
 | `01_08_pulse_protocol_development/` | 01,02,04,05,08 | Original GITT pulse-discharge protocol: leakage fix, NaN fix, variable-rate problem, archived pulse code |
-| `03_10_continuous_discharge_development/` | 03,06,10 | Continuous constant-current discharge protocol that superseded pulse (became the main pipeline) |
+| `03_06_10_continuous_discharge_development/` | 03,06,10 | Continuous constant-current discharge protocol that superseded pulse (became the main pipeline) |
 | `07_09_19_early_real_data_validation/` | 07,09,19 | Early real-lab-data evaluation (LFP/NMC test rig, CALCE, EMPA) preceding the systematic sim-to-real series |
 | `11_15_termination_artifact_investigation/` | 11,12,13,14,15 | Solver-termination artifact: discovery, quantification, fixes, and post-fix hyperparameter tuning |
 | `17_18_nmc_coverage_gap_investigation/` | 17,18,18 | Why synthetic NMC data barely reaches the real target voltage zone |

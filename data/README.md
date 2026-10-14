@@ -24,7 +24,7 @@ Organized by the same thematic groups as `experiments/` itself (see
 | `01_soc_0.1-0.4` (+3 SOC-interval siblings) | `01_leakage_fix_20_percent_coverage/soc_sweep.py` |
 | `04_pulse_variable_soc_0.1-0.4` (+3) | `04_pulse_variable_discharge_soc_sweep/sweep_pulse_variable_discharge.py` |
 
-**`03_10_continuous_discharge_development/`**
+**`03_06_10_continuous_discharge_development/`**
 | Folder | Produced by |
 |---|---|
 | `03_continuous_soc_0.1-0.4` (+3) | `03_continuous_discharge_soc_sweep/sweep_continuous_discharge.py` |

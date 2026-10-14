@@ -25,7 +25,7 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 EXP07_DIR = os.path.dirname(SCRIPT_DIR)  # experiments/07_real_lfp_nmc_test/, for the shared parsers
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(EXP07_DIR)))
-CONTINUOUS_EXPERIMENT_DIR = os.path.join(PROJECT_DIR, "experiments", "03_10_continuous_discharge_development", "03_continuous_discharge_soc_sweep")
+CONTINUOUS_EXPERIMENT_DIR = os.path.join(PROJECT_DIR, "experiments", "03_06_10_continuous_discharge_development", "03_continuous_discharge_soc_sweep")
 
 sys.path.insert(0, PROJECT_DIR)                   # for the root ml_pipeline.py
 sys.path.insert(0, CONTINUOUS_EXPERIMENT_DIR)      # for feature_engineering_continuous.py
