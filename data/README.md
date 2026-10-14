@@ -30,7 +30,7 @@ Organized by the same thematic groups as `experiments/` itself (see
 | `03_continuous_soc_0.1-0.4` (+3) | `03_continuous_discharge_soc_sweep/sweep_continuous_discharge.py` |
 | `06_const_random_soc_0.1-0.4` (+3) | `06_cont_random_discharge_soc_sweep/sweep_const_discharge_random.py` |
 
-**`11_14_termination_artifact_investigation/`**
+**`11_15_termination_artifact_investigation/`**
 | Folder | Produced by |
 |---|---|
 | `11_cutoff_original`, `11_cutoff_lower` (+2 low-SOC variants) | `11_voltage_cutoff_comparison/compare_voltage_cutoffs.py` |
