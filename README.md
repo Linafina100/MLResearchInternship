@@ -1,6 +1,6 @@
 # MLResearchInternship
 
-This project develops machine learning models to distinguish between two types of lithium ion batteries: LFP and NMC. It uses features extracted from battery discharge curves, based on how voltage changes as capacity decreases (\(\mathrm{d}V/\mathrm{d}Q\)).
+This project develops machine learning models to distinguish between two types of lithium ion batteries: LFP and NMC. It uses features extracted from battery discharge curves, based on how voltage changes as capacity decreases ($\mathrm{d}V/\mathrm{d}Q$)
 
 The main goal is to test how well models trained on simulated battery data can classify real experimental data. Two models are compared: Random Forest and XGBoost.
 
@@ -33,7 +33,7 @@ The default discharge rate is 0.6C. Each simulation runs until the battery reach
 
 Processes the discharge curves to extract features describing how voltage changes as the battery discharges.
 
-It calculates \(\mathrm{d}V/\mathrm{d}Q\), which describes how voltage changes relative to the amount of charge discharged. The values are grouped into voltage bins of 0.1 V, creating a consistent set of features for the machine learning models.
+It calculates ($\mathrm{d}V/\mathrm{d}Q$), which describes how voltage changes relative to the amount of charge discharged. The values are grouped into voltage bins of 0.1 V, creating a consistent set of features for the machine learning models.
 
 Bins that are only reached by one battery chemistry are removed to prevent the models from relying on voltage ranges that would reveal the battery type too easily. See Experiment 01 for more details.
 
@@ -49,13 +49,13 @@ Run the following commands in order, without additional arguments, to perform a 
 
 ```bash
 # 1. Simulate battery discharge curves
-python3 simulate_batteries.py
+python simulate_batteries.py
 
 # 2. Extract features from the discharge curves
-python3 feature_engineering.py
+python feature_engineering.py
 
 # 3. Train and evaluate the machine learning models
-python3 ml_pipeline.py
+python ml_pipeline.py
 ```
 
 ## Dependencies
