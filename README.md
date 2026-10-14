@@ -1,61 +1,85 @@
 # MLResearchInternship
 
-Classifies lithium-ion battery chemistry (LFP vs. NMC) from discharge curves via $\mathrm{d}V/\mathrm{d}Q$ voltage-bin features, benchmarking sim-to-real transfer from PyBaMM simulations to experimental cell data using Random Forest and XGBoost.
+This project develops machine learning models to distinguish between two types of lithium ion batteries: LFP and NMC. It uses features extracted from battery discharge curves, based on how voltage changes as capacity decreases (\(\mathrm{d}V/\mathrm{d}Q\)).
 
-Originally built around a GITT pulse-discharge
-protocol; the main pipeline now models a continuous constant-current
-discharge instead, closer to how the intended real-world test equipment actually runs cells.
+The main goal is to test how well models trained on simulated battery data can classify real experimental data. Two models are compared: Random Forest and XGBoost.
+
+The project originally used a GITT pulse discharge method. The main pipeline now simulates continuous constant current discharge, which better reflects how the intended real world testing equipment operates.
 
 ## Repository layout
 
-```
-simulate_batteries.py      # Simulates LFP/NMC discharge curves (PyBaMM)
-feature_engineering.py     # Extracts dV/dQ voltage-bin features from simulated/raw discharge data
-ml_pipeline.py             # Trains + evaluates Random Forest / XGBoost on those features 
-data/                      # Gitignored: all raw data + simulation/feature/plot output -- see data/README.md
-experiments/               # Numbered, self-contained experiments -- see experiments/README.md
-optimize_empa/             # Active optimization + pipeline  --see optimize_empa/README.md
+```text
+simulate_batteries.py      # Simulates battery discharge curves using PyBaMM
+feature_engineering.py     # Extracts useful features from discharge curves
+ml_pipeline.py             # Trains and evaluates Random Forest and XGBoost
+data/                      # Raw data and generated outputs (not tracked by Git)
+experiments/               # Numbered experiments testing different approaches
+optimize_empa/             # Ongoing model optimization and pipeline development
 ```
 
-### Root pipeline
-The root pipeline generates synthetic baseline data and can be executed out-of-the-box with no arguments for a single default run. The trained models can then be combined and evaluated against real-world experimental data for sim-to-real transfer validation.
+## Main pipeline
 
-`simulate_batteries.py`: Runs continuous discharge simulations (defaulting to 0.6C) across randomized LFP and NMC cell states (varying initial SOC, SOH, ambient temperature, and internal resistance) down to chemistry-specific cutoff voltages. It outputs raw time-series traces $\mathrm{d}V/\mathrm{d}Q$ alongside discharge-curve diagnostic plots.
-`feature_engineering.py`: Computes continuous $\mathrm{d}V/\mathrm{d}Q$ derivatives, discretizes them into 0.1 V voltage bins, and filters out bins that only a single chemistry ever reaches to prevent trivial target leakage (see Experiment 01).
-`ml_pipeline.py`: Consumes the engineered feature matrices to train and evaluate classifiers (Random Forest, XGBoost), handling feature alignment for holdout experimental sets and optionally serializing trained estimators, scalers, imputers, and metadata to models/.
+The main pipeline creates simulated battery data, extracts features from the discharge curves, and uses these features to train machine learning models. The models can then be tested on real experimental data to evaluate how well they transfer from simulations to real batteries.
 
-Run directly with no arguments for a single default run:
-```
-# 1. Simulate continuous synthetic discharge profiles (PyBaMM)
+The pipeline can be run from start to finish using three scripts.
+
+### 1. `simulate_batteries.py`
+
+Simulates how LFP and NMC batteries discharge using PyBaMM. The simulations vary several battery conditions, including initial state of charge (SOC), state of health (SOH), ambient temperature, and internal resistance.
+
+The default discharge rate is 0.6C. Each simulation runs until the battery reaches its chemistry specific cutoff voltage. The script saves the simulated discharge data and diagnostic plots.
+
+### 2. `feature_engineering.py`
+
+Processes the discharge curves to extract features describing how voltage changes as the battery discharges.
+
+It calculates \(\mathrm{d}V/\mathrm{d}Q\), which describes how voltage changes relative to the amount of charge discharged. The values are grouped into voltage bins of 0.1 V, creating a consistent set of features for the machine learning models.
+
+Bins that are only reached by one battery chemistry are removed to prevent the models from relying on voltage ranges that would reveal the battery type too easily. See Experiment 01 for more details.
+
+### 3. `ml_pipeline.py`
+
+Uses the extracted features to train and evaluate Random Forest and XGBoost classifiers.
+
+It also aligns features when testing the models on separate experimental datasets, ensuring that the input data has the expected format. Trained models and related preprocessing information can optionally be saved for later use.
+
+### Running the pipeline
+
+Run the following commands in order, without additional arguments, to perform a default run:
+
+```bash
+# 1. Simulate battery discharge curves
 python3 simulate_batteries.py
-# 2. Extract and align 0.1V dV/dQ voltage-bin features
+
+# 2. Extract features from the discharge curves
 python3 feature_engineering.py
-# 3. Train models and benchmark sim-to-real performance
+
+# 3. Train and evaluate the machine learning models
 python3 ml_pipeline.py
 ```
 
-### Dependencies
+## Dependencies
 
-No lockfile is currently checked in. The pipeline imports: `pybamm`,
-`pandas`, `numpy`, `scikit-learn`, `xgboost`, `matplotlib`, `seaborn`,
-`joblib`.
+The project does not currently include a dependency lockfile. The pipeline uses the following Python libraries:
+
+- `pybamm` for battery simulations
+- `pandas` and `numpy` for data processing
+- `scikit-learn` and `xgboost` for machine learning
+- `matplotlib` and `seaborn` for plots
+- `joblib` for saving trained models and related objects
 
 ## Data
 
-All simulation/feature/plot output is gitignored and regenerated per run
-under `data/`. See `data/README.md` for the full index of what each
-folder contains and which script produces it.
+Raw data, simulation results, extracted features, and plots are stored under `data/`. These files are excluded from Git and are generated or recreated as needed.
 
+See `data/README.md` for an overview of the available data, what each folder contains, and which scripts generate the files.
 
 ## Experiments
 
-`experiments/` holds numbered, self-contained variations on the
-pipeline, grouped thematically into folders like
-`20_21_diffusivity_ocp_tuning/` -- each leaf experiment has its own
-`RESULTS.md` write-up, plus one or more scripts that either fork the root
-pipeline's simulation/feature logic or reuse it directly and just sweep a
-parameter. See `experiments/README.md` for the full index of groups and
-what each one covers; numbering collides occasionally when multiple
-people add a folder independently, so always check `ls experiments/` on a
-fresh pull before assigning a new number.
+The `experiments/` directory contains separate experiments that test different approaches to improving the pipeline. These include changes to the simulation settings, feature engineering, and model performance.
 
+Experiments are organized into numbered folders, sometimes grouped by topic. Each experiment contains a `RESULTS.md` file explaining what was tested, what was changed, and what the results showed. Additional scripts contain the code used to run the experiment.
+
+See `experiments/README.md` for an overview of the experiment groups and their purpose.
+
+Experiment numbers may occasionally overlap because different people have created folders independently. Before starting a new experiment, check the existing folders with `ls experiments/` to avoid assigning a number that is already in use.
