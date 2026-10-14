@@ -32,7 +32,14 @@ Reuses attempt 03's synthetic data (NEG_CAPACITY_FACTOR=0.45) and
 attempt 01's real data unchanged, same as attempt 04. See this folder's
 RESULTS.md for the full before/after result.
 
-Usage: python3 optimize_empa_low_soc/experiment/05_stable_median_reference/run_evaluation.py
+Also persists, per Initial_SOC bucket, whichever of RF/XGBoost scored
+higher there (this is a per-SOC-specialized pipeline, not one global
+model -- see outputs/models/README.md), plus everything needed to
+reuse it: the fitted scaler/imputer/encoder, the clip bounds, and the
+bin_cols / median-reference-bins used for the ratio-to-median
+transform. Set SAVE_MODELS=0 to skip (results JSON is always written).
+
+Usage: python3 optimize_empa/experiment/05_stable_median_reference/run_evaluation.py
 """
 import matplotlib
 matplotlib.use("Agg")
@@ -41,6 +48,7 @@ import json
 import os
 import sys
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -64,6 +72,8 @@ SYNTHETIC_RAW_CSV = os.environ.get("SYNTHETIC_RAW_CSV", os.path.join(PROJECT_DIR
 REAL_RAW_CSV = os.environ.get("REAL_RAW_CSV", os.path.join(PROJECT_DIR, "data", "optimize_empa_low_soc_01_real", "raw", "real_empa_raw.csv"))
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "outputs", "features")
 RESULTS_JSON = os.path.join(SCRIPT_DIR, "outputs", "sweep_results.json")
+MODELS_DIR = os.path.join(SCRIPT_DIR, "outputs", "models")
+SAVE_MODELS = os.environ.get("SAVE_MODELS", "1") not in ("0", "false", "False")
 
 SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
@@ -227,7 +237,38 @@ def fit_models(x_train, y_train):
     return models
 
 
-def evaluate_bucket(soc, features_df, bin_cols):
+def save_bucket_model(soc, bin_cols, median_ref_bins, lower, upper, imputer, scaler, le, models, out):
+    """Persists whichever of RF/XGBoost scored higher balanced_accuracy
+    for this bucket, plus everything needed to run it on new data later:
+    the fitted preprocessing (imputer/scaler/encoder), the per-bin clip
+    bounds learned from this bucket's own training data, and the exact
+    bin_cols / median_ref_bins this bucket's ratio-to-median transform
+    used (both can differ bucket-to-bucket if coverage filtering drops
+    different bins)."""
+    winner_name = max(("Random Forest", "XGBoost"), key=lambda n: out[n]["balanced_accuracy"])
+    bucket_dir = os.path.join(MODELS_DIR, f"soc_{soc}")
+    os.makedirs(bucket_dir, exist_ok=True)
+
+    joblib.dump(models[winner_name], os.path.join(bucket_dir, "classifier.joblib"))
+    joblib.dump(scaler, os.path.join(bucket_dir, "scaler.joblib"))
+    joblib.dump(imputer, os.path.join(bucket_dir, "imputer.joblib"))
+    joblib.dump(le, os.path.join(bucket_dir, "label_encoder.joblib"))
+
+    with open(os.path.join(bucket_dir, "feature_names.json"), "w") as f:
+        json.dump({"bin_cols": list(bin_cols), "median_reference_bins": list(median_ref_bins)}, f, indent=2)
+    with open(os.path.join(bucket_dir, "clip_bounds.json"), "w") as f:
+        json.dump({"lower": lower.to_dict(), "upper": upper.to_dict()}, f, indent=2)
+    with open(os.path.join(bucket_dir, "metadata.json"), "w") as f:
+        json.dump({
+            "initial_soc": soc, "model_name": winner_name,
+            "is_soc_matched": out["is_soc_matched"], "is_extrapolation": out["is_extrapolation"],
+            "n_train": out["n_train"], "n_test": out["n"],
+            **{k: out[winner_name][k] for k in ("balanced_accuracy", "LFP_recall", "NMC_recall")},
+        }, f, indent=2)
+    print(f"  Saved winning model ({winner_name}, balanced={out[winner_name]['balanced_accuracy']*100:.2f}%) -> '{bucket_dir}'")
+
+
+def evaluate_bucket(soc, features_df, bin_cols, median_ref_bins):
     synth_df = features_df[features_df['DataKind'] == 'synthetic']
     real_bucket = features_df[(features_df.DataKind == 'real') & (features_df.Initial_SOC == soc)]
     if len(real_bucket) == 0:
@@ -274,6 +315,10 @@ def evaluate_bucket(soc, features_df, bin_cols):
         }
         print(f"  {name:<15} balanced={out[name]['balanced_accuracy']*100:.2f}%  "
               f"LFP_recall={out[name]['LFP_recall']:.3f}  NMC_recall={out[name]['NMC_recall']:.3f}")
+
+    if SAVE_MODELS:
+        save_bucket_model(soc, bin_cols, median_ref_bins, lower, upper, imputer, scaler, le, models, out)
+
     return out
 
 
@@ -303,7 +348,7 @@ def main():
 
     bucket_results = {}
     for soc in SOC_START_POINTS:
-        result = evaluate_bucket(soc, features_df, bin_cols)
+        result = evaluate_bucket(soc, features_df, bin_cols, median_ref_bins)
         if result is not None:
             bucket_results[str(soc)] = result
 

@@ -13,8 +13,7 @@ discharge instead, closer to how the intended real-world test equipment
 ```
 simulate_batteries.py      # Simulates LFP/NMC discharge curves (PyBaMM), the "main" pipeline
 feature_engineering.py     # Extracts dV/dQ voltage-bin features from simulated/raw discharge data
-ml_pipeline.py             # Trains + evaluates Random Forest / XGBoost on those features
-models/                    # Tracked, trained model artifacts (scaler, imputer, encoder, feature list)
+ml_pipeline.py             # Trains + evaluates Random Forest / XGBoost on those features (writes models/ if run standalone -- not tracked, not kept up to date)
 data/                      # Gitignored: all simulation/feature/plot output -- see data/README.md
 experiments/               # Numbered, self-contained experiments -- see experiments/README.md
 optimize_empa/             # Active low-SOC optimization campaign; base_pipeline/ is colleagues' shared EMPA pipeline

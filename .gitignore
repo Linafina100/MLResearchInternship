@@ -6,9 +6,13 @@ continuous_discharge_plot*.png
 DownloadedData/
 __pycache__/
 *.pyc
+/models/
 # Nothing under data/ is ever committed (regenerable simulation output --
 # raw/feature CSVs, plots, per-run model artifacts, whatever format a given
-# experiment happens to write); root models/ is a separate, tracked folder.
+# experiment happens to write). Root models/ used to be a separate,
+# tracked exception to that -- deleted as stale; if the bare root
+# pipeline is ever rerun standalone it regenerates models/ but that's
+# now gitignored too, matching data/'s convention.
 # Exception: data/README.md (layout/provenance doc, not generated output).
 # Uses data/* (not data/) so git still descends into the directory --
 # a bare "data/" pattern excludes the dir itself and negation can't

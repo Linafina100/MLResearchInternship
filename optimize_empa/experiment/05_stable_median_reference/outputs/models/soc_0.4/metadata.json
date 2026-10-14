@@ -1,0 +1,11 @@
+{
+  "initial_soc": 0.4,
+  "model_name": "XGBoost",
+  "is_soc_matched": false,
+  "is_extrapolation": true,
+  "n_train": 498,
+  "n_test": 12625,
+  "balanced_accuracy": 0.9990821294596536,
+  "LFP_recall": 1.0,
+  "NMC_recall": 0.9981642589193072
+}
