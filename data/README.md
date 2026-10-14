@@ -1,22 +1,41 @@
-# data/ layout
+ # data/ layout
 
-Gitignored, local-only, fully regenerable -- this file is the one
-exception (`.gitignore` uses `data/*` + `!data/README.md`). Every
-numbered folder is read back by a specific script at a hardcoded path;
-renaming or moving one requires updating that script too (traced below,
-not guessed from the name).
+
+This entire directory is excluded from version control (`.gitignore` uses `data/*` + `!data/README.md`). If you are browsing this repository on GitHub, **this folder appears empty except for this README**. All underlying file simulation traces, extracted features, diagnostic plots, and raw experimental files are stored strictly on local disk to avoid tracking large data artifacts in Git.
+
+---
+
+## 0. Project Evolution & Initial Architecture
+
+### How the directory was used in the beginning
+At the start of the project, `data/` served as an active, centralized shared workspace. Each numbered phase in `experiments/` wrote its outputs into a matching, dedicated numbered subfolder here (e.g., `01_*`, `03_*`, `11_*`, `22_*`, `32_*`). 
+
+In this original setup:
+* **Tight, Hardcoded Coupling:** Scripts had hardcoded relative file paths targeting specific subdirectories inside `data/`. One experiment's simulation script would generate raw traces into a numbered directory, and the next downstream evaluation or feature extraction script would read directly back from that exact location.
+* **Full Local Regenerability:** Any synthetic folder could be recreated from scratch simply by executing its originating experiment script.
+* **Dual-Use Storage:** The folder housed both raw external benchmark archives (`Dataset-rocrate/`, `calce_experiment_data/`) and intermediate PyBaMM simulation sweeps side-by-side.
+
+### Why it looks different now
+As the codebase matured, the active modeling workflow was consolidated into parameter-driven root pipelines (`simulate_batteries.py`, `feature_engineering.py`, `ml_pipeline.py`) that rely on environment variables (`DATA_DIR`, `RUN_LABEL`, `MODELS_DIR`) rather than hardcoded numbered paths. 
+
+Consequently, **the numbered directories below are no longer actively used or updated during daily development**. They are preserved in this document as a **historical lookup map**: because legacy sweep scripts in `experiments/` still contain hardcoded paths to these names, renaming or restructuring them locally would break historical script execution.
+
+---
 
 ## 1. Raw downloaded datasets (not pipeline output)
+
+These are external empirical benchmarks downloaded manually and placed locally in `data/`:
 
 | Folder | What it is |
 |---|---|
 | `Dataset-rocrate/` | The downloaded EMPA RO-Crate dataset -- 199 coin cells (`empa__ccidNNNNNN/`), each a `.bdf.csv`/`.bdf.parquet`/`.metadata.json` triple. |
 | `calce_experiment_data/` | Raw downloaded CALCE OCV test spreadsheets (`.xls`/`.xlsx`). |
 
-## 2. `experiments/` pipeline output
+---
 
-Organized by the same thematic groups as `experiments/` itself (see
-`experiments/README.md`).
+## 2. `experiments/` pipeline output (Historical Reference)
+
+Organized by the same thematic groups as `experiments/` itself (see `experiments/README.md`).
 
 **`01_08_pulse_protocol_development/`**
 | Folder | Produced by |
@@ -37,10 +56,7 @@ Organized by the same thematic groups as `experiments/` itself (see
 | `16_low_voltage_v1.5` | Producing experiment removed in an earlier consolidation (was `16_low_voltage_only_sim_to_real`) -- see git history if ever needed. Kept for local traceability only. |
 | `17_high_soh_low_crate_v1.5` | `17_18_nmc_coverage_gap_investigation/17_high_soh_low_crate_sim_to_real/simulate_batteries_high_soh_low_crate.py` |
 
-(The `16`/`17` rows above live physically next to `11`'s output on disk
-but are produced by `17_18_nmc_coverage_gap_investigation/` -- grouped
-here with the other termination/coverage diagnostics for readability,
-not strictly by producing-group.)
+*(Note: The `16`/`17` rows above live physically next to `11`'s output on disk but are produced by `17_18_nmc_coverage_gap_investigation/`—grouped here with the other termination/coverage diagnostics for readability, not strictly by producing-group).*
 
 **`20_21_diffusivity_ocp_tuning/`** (unmoved)
 | Folder | Produced by |
@@ -76,7 +92,7 @@ not strictly by producing-group.)
 | `32_lfp_negative_electrode_balance` | `data_generation/simulate_lfp_negative_electrode_balance.py` -- LFP-only resimulation with the validated negative-electrode capacity fix |
 | `32_synthetic_lfp_balance_fix_combined` | `data_generation/combine_lfp_fix_with_baseline_nmc.py` -- combines the fix above with unmodified baseline NMC |
 
-**`32_fixed_voltage_cutoff_soc_sweep/`** (this experiment's own namespace -- added when its per-SOC-point evaluators' raw output was moved out of `experiments/` to match every other experiment's convention)
+**`32_fixed_voltage_cutoff_soc_sweep/` (internal namespace)**
 | Folder | Produced by |
 |---|---|
 | `per_soc_raw/sim_and_real_raw_{exp07,EMPA,SNL}_soc_*.csv` + `per_soc_raw/features/` | `evaluation_baseline/evaluate_per_soc_point_models.py` |
@@ -84,59 +100,50 @@ not strictly by producing-group.)
 | `tmp_avg_dvdq/` | `diagnostics/plot_average_discharge_curves.py`'s scratch working dir |
 | `tmp_scale_invariant_smoke/` | `diagnostics/smoke_test_scale_invariant_features.py`'s scratch working dir |
 
-(A twelfth set, `sim_and_real_raw_balancefix_EMPA_soc_*.csv`, was deleted
-during this move -- confirmed via repo-wide grep that no script anywhere
-produces or reads files with that prefix; it was dead output from some
-earlier, since-removed version of the evaluator.)
+---
 
 ## 3. Orphaned: former `optimize_empa/` campaign data (producing folder deleted)
 
-The original, completed `optimize_empa/` campaign (negative-electrode-
-balance + ratio-to-median tuning) was deleted once its single validated
-finding had been fully carried forward as the attempt-01 baseline of
-the campaign now living at `optimize_empa/` (see section 4 -- that's a
-different, later campaign that reused the freed folder name). Nothing
-currently produces or reads these two folders.
+The original, completed `optimize_empa/` campaign (negative-electrode-balance + ratio-to-median tuning) was deleted once its single validated finding had been fully carried forward as the attempt-01 baseline of the campaign now living at `optimize_empa/` (see section 4). Nothing currently produces or reads these two folders.
 
 | Folder | Produced by (deleted) |
 |---|---|
 | `optimize_empa_01_real_empa` | was `optimize_empa/experiment/01_ratio_to_median_baseline/data_generation/build_real_empa_soc_sweep_soh_range.py` |
 | `optimize_empa_01_synthetic_baseline` | was that experiment's `data_generation/` scripts (negative-electrode-balance-fixed LFP + unmodified NMC) |
 
-## 4. `optimize_empa/` campaign data (active, this branch)
+---
+
+## 4. `optimize_empa/` campaign data
 
 | Folder | Produced by |
 |---|---|
-| `optimize_empa_low_soc_01_real` | attempt 01's `data_generation/build_real_empa.py` -- reused unchanged by every later attempt (real-data generation doesn't depend on the synthetic-side physics fixes) |
+| `optimize_empa_low_soc_01_real` | attempt 01's `data_generation/build_real_empa.py` -- reused unchanged by every later attempt (real-data generation doesn't depend on synthetic-side physics fixes) |
 | `optimize_empa_low_soc_01_synthetic` | attempt 01's `data_generation/simulate_batteries.py` |
 | `optimize_empa_low_soc_02_synthetic` | attempt 02's generator (`NEG_CAPACITY_FACTOR=0.7`) |
 | `optimize_empa_low_soc_03_synthetic` | attempt 03's generator (`NEG_CAPACITY_FACTOR=0.45`, tuned) |
 
-(Attempts 04/05 are evaluation-only changes -- they reuse attempt 03's
-synthetic data and attempt 01's real data directly, no new folder. The
-`optimize_empa_low_soc_*` data-folder names predate this campaign's code
-folder being renamed from `optimize_empa_low_soc/` to `optimize_empa/` --
-left unchanged per this project's data/ convention of not renaming
-regenerable output just to track a code move.)
+*(Attempts 04/05 are evaluation-only changes that reuse attempt 03's synthetic data and attempt 01's real data directly. The `optimize_empa_low_soc_*` names predate the code folder rename to `optimize_empa/` and remain unchanged to preserve data paths).*
 
-## 5. `optimize_empa/base_pipeline/` campaign data (colleagues' shared pipeline, documented here for completeness)
+---
+
+## 5. `optimize_empa/base_pipeline/` campaign data (shared pipeline)
 
 | Folder | What it is |
 |---|---|
 | `raw/`, `plots/`, `failures/` | `base_pipeline`'s default, unnamespaced output location (its scripts' `DATA_DIR` defaults straight to `data/`, not a per-campaign subfolder) -- `raw/` holds both its synthetic and real CSVs together. |
 
+---
+
 ## 6. Cross-cutting / diagnostic (not experiment-specific)
 
 | Folder | What it is |
 |---|---|
-| `default/` | Root pipeline scripts' (`simulate_batteries.py` etc.) own generic `RUN_LABEL` fallback when none is set. |
-| `main_pipeline_<date>/` | Root pipeline's own dated diagnostic runs -- see `tools/make_main_pipeline_plots.py`. |
-| `simulating_problems/` | Diagnostic plots, cross-cutting (not tied to one experiment). |
+| `default/` | Root pipeline scripts' (`simulate_batteries.py` etc.) generic fallback when no `RUN_LABEL` is set. |
+| `main_pipeline_<date>/` | Root pipeline's dated diagnostic runs -- see `tools/make_main_pipeline_plots.py`. |
+| `simulating_problems/` | Cross-cutting diagnostic plots not tied to a single experiment. |
+
+---
 
 ## Orphans
 
-None currently tracked -- `archive/` (a pre-consolidation leftover whose
-generating script was deleted) was removed as part of this document's
-last cleanup pass. If a future folder stops being referenced by any
-script, note it here rather than silently deleting it, so there's a
-record of why it was kept or removed.
+None currently tracked -- `archive/` (a pre-consolidation leftover whose generating script was deleted) was removed as part of this document's last cleanup pass. If a future folder stops being referenced by any script, note it here rather than silently deleting it, so there is a persistent record of why it was kept or removed.
