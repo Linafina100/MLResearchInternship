@@ -33,7 +33,8 @@ XGBoost curve is pixel-identical to attempt 03's.)
 | 02 | `experiment/02_negative_electrode_balance/` | LFP negative-electrode capacity rebalance (factor=0.7, carried over from `optimize_empa/experiment/01_...`), targeting the LFP OCP calibration gap root-caused in attempt 01 | XGBoost: working range extended a full SOC step lower, now 95.7-99.9% down to **0.15** (was 0.2). Random Forest: recovered at SOC 1.0/0.9 (99.87%, was chance), still chance-level 0.8 and below. Both models still chance below 0.1 | Verified at full scale; a real, partial improvement -- see its own RESULTS.md for the full before/after table and the sanity-check diagnostic that preceded the full run |
 | 03 | `experiment/03_tuned_negative_electrode_factor/` | Swept `NEG_CAPACITY_FACTOR` (0.4-0.8) against this pipeline's own calibration gap instead of assuming attempt 02's borrowed 0.7 was optimal; found 0.45-0.47 fits real LFP noticeably better | Random Forest partially recovers at SOC=0.8 (LFP recall 0.000 -> 0.281). XGBoost essentially unchanged (already saturated 1.0-0.15 with the looser factor) -- no further SOC-range extension. Diminishing returns from this lever alone | Verified at full scale -- see its own RESULTS.md; recommends a different/additional lever next (ratio-to-median scale-invariant features) |
 | 04 | `experiment/04_ratio_to_median_features/` | Ratio-to-median scale-invariant features (each bin's dV/dQ divided by that row's own median), layered on attempt 03's synthetic data -- a feature-representation fix rather than a physics fix | Mixed: Random Forest regresses to chance everywhere it was working in attempt 03 (1.0/0.9/0.8). XGBoost breaks through at the lowest SOC point in the whole campaign: Initial_SOC=0.05 goes from chance to **81.81%** balanced accuracy (LFP recall 0.000 -> 1.000) | Verified at full scale -- see its own RESULTS.md. Head-to-head check against attempt 03 (below) showed XGBoost dominates regardless of feature set -- no hybrid needed |
-| 05 | `experiment/05_stable_median_reference/` | Root-caused and fixed why Initial_SOC=0.1 stayed at chance while the more extreme 0.05 worked: ratio-to-median's per-row median was computed over whatever bins that row had, which varies by SOC-truncation depth. Fixed the median denominator to a consistent reference bin set | **Initial_SOC=0.1: chance (48.98%) -> 95.17%** (LFP recall 0.000 -> 1.000) -- the campaign's biggest single jump. Real but modest cost elsewhere: 0.3/0.2/0.15 drop from ~100% to 96-99% (still solid); 0.05 dips to 79.84% | Verified at full scale -- see its own RESULTS.md; this campaign's current best, net positive for the "lowest possible SOC" goal |
+| 05 | `experiment/05_stable_median_reference/` | Root-caused and fixed why Initial_SOC=0.1 stayed at chance while the more extreme 0.05 worked: ratio-to-median's per-row median was computed over whatever bins that row had, which varies by SOC-truncation depth. Fixed the median denominator to a consistent reference bin set | **Initial_SOC=0.1: chance (48.98%) -> 95.17%** (LFP recall 0.000 -> 1.000) -- the campaign's biggest single jump. Real but modest cost elsewhere: 0.3/0.2/0.15 drop from ~100% to 96-99% (still solid); 0.05 dips to 79.84% | Verified at full scale -- see its own RESULTS.md; superseded by attempt 06's broader revision (per-SOC specialization itself dropped) |
+| 06 | `experiment/06_pooled_model_full_soc_range/` | Abandoned per-SOC specialization entirely: ONE model trained once on a genuinely full-range synthetic set (continuous-discharge-truncated, Initial_SOC 0.05-1.0, 5,976 rows -- not the old 0.5-1.0-floor, rest-initialized generator), evaluated at every real SOC bucket | **Fixes Random Forest completely** (96.88-98.47% balanced accuracy at every bucket, matching XGBoost 97.19-99.08%) -- confirms the RF "collapse" in attempts 01-05 was per-SOC specialization shrinking training sets to ~100-500 rows, not a data or RF problem. Accuracy-vs-SOC is now flat (no cliff at low SOC at all): 98.53%/98.47% (XGB/RF) at SOC=0.05, vs. attempt 05's 79.84% there | Verified at full scale -- see its own RESULTS.md; this campaign's current best, and the new recommended design |
 
 ## Current best, and a correction to attempt 04's "next steps"
 
@@ -80,6 +81,34 @@ reference to a consistently-covered bin subset (2.6V-3.1V) took
 Initial_SOC=0.1 from chance (48.98%) to **95.17%** -- at a real but
 modest cost elsewhere (0.3/0.2/0.15 drop from ~100% to 96-99%, still
 solid; 0.05 dips slightly to 79.84%). See `experiment/05_stable_median_reference/RESULTS.md`.
+
+## Experiment 06 revises the "Random Forest can be dropped" conclusion
+
+The head-to-head above concluded Random Forest is dominated by
+XGBoost "in every configuration tested so far" -- true for every
+per-SOC-specialized configuration, but it turned out to be an artifact
+of *how* RF was being used, not a property of RF itself. Investigating
+why RF sat at ~50% balanced accuracy (always predicting NMC) while
+XGBoost scored well on identical data found the cause: per-SOC
+specialization (introduced upstream, inherited by every attempt here)
+narrowed each bucket's training set to ~100-500 rows, which
+`RandomForestClassifier(max_depth=10)` overfits on while XGBoost's
+built-in regularization tolerates. Separately, per-SOC specialization
+was never actually the right design for the stated goal (one model,
+unknown test-time SOC) -- it existed only as a workaround for the
+synthetic generator's `Initial_SOC>=0.5` floor.
+
+Attempt 06 removes per-SOC specialization and that floor at once (see
+its own RESULTS.md): one pooled model, trained on continuous-discharge-
+truncated synthetic data spanning the full 0.05-1.0 range. Result: RF
+matches XGBoost everywhere (96.88-98.47% vs. 97.19-99.08%), and the
+accuracy-vs-SOC curve is flat all the way down to 0.05 -- no cliff,
+unlike every per-SOC-specialized attempt. **This is now the campaign's
+recommended design**; attempts 01-05's per-SOC specialization and
+ratio-to-median machinery are superseded, not because they were
+wrong, but because they were solving a problem (SOC-truncation-
+dependent training) that doesn't exist once the synthetic data
+actually covers the full SOC range with physically-correct generation.
 
 ## Background
 
