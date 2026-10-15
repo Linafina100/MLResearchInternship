@@ -31,6 +31,7 @@ def main():
         return
 
     buckets = results["EMPA"].get("buckets", {})
+    meta = results["EMPA"].get("meta", {})
     rf_y = [
         buckets[str(s)]["Random Forest"]["balanced_accuracy"] * 100
         if str(s) in buckets else None
@@ -49,17 +50,14 @@ def main():
     ax.plot(SOC_START_POINTS, xgb_y, color=EMPA_COLOR, linestyle="--", marker="s",
             linewidth=2, markersize=6, alpha=0.8, label="EMPA - XGBoost")
 
-    n_first = buckets.get("1.0", {}).get("Random Forest", {}).get("n")
-    if n_first and rf_y[0] is not None:
-        ax.annotate(f"n={n_first}", xy=(1.0, rf_y[0]), xytext=(6, 6),
-                    textcoords="offset points", fontsize=8, color=EMPA_COLOR)
-
-    ax.axhline(50, color="#9AA4AC", linestyle=":", linewidth=1.5, label="Chance (50%)")
+    if meta.get("n_cells") and meta.get("n_cycles"):
+        ax.text(0.98, 0.02, f"{meta['n_cells']} cells, {meta['n_cycles']} cycles",
+                transform=ax.transAxes, fontsize=9, color="#555555",
+                ha="right", va="bottom")
 
     ax.set_xlabel("Initial SOC (fraction of cell's capacity remaining)")
     ax.set_ylabel("Balanced accuracy (%)")
-    ax.set_title("EMPA Sim-to-Real Accuracy vs. Initial SOC\n"
-                 "(ONE pooled model, continuous-discharge-truncated synthetic training, full SOC range)")
+    ax.set_title("Sim-to-Real Accuracy vs. Initial SOC")
     ax.set_xlim(1.05, 0.0)  # Descending: full charge (left) -> near-empty (right)
     ax.set_ylim(0, 105)  # not clipped to a narrow high-accuracy band -- show the full picture either way
     ax.grid(True, alpha=0.3)

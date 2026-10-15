@@ -94,9 +94,10 @@ def extract_features_with_kind():
 
     raw_df = pd.read_csv(RAW_CSV, low_memory=False)
     raw_df["Battery_ID"] = raw_df.groupby(GROUPBY_COLS).ngroup()
-    id_cols = raw_df.drop_duplicates("Battery_ID").set_index("Battery_ID")[["DataKind", "Initial_SOC"]]
+    id_cols = raw_df.drop_duplicates("Battery_ID").set_index("Battery_ID")[["DataKind", "Initial_SOC", "Variation_ID"]]
     features_df["DataKind"] = features_df["Battery_ID"].map(id_cols["DataKind"])
     features_df["Initial_SOC"] = features_df["Battery_ID"].map(id_cols["Initial_SOC"])
+    features_df["Variation_ID"] = features_df["Battery_ID"].map(id_cols["Variation_ID"])
 
     all_bin_cols = sorted(
         (c for c in features_df.columns if c.startswith("dV_dQ_V_")),
@@ -221,7 +222,17 @@ def main():
         except Exception as e:
             print(f"Note: Could not parse existing '{RESULTS_JSON}' ({e}). Rebuilding.")
 
-    existing_results["EMPA"] = {"buckets": bucket_results}
+    # Variation_ID encodes "<cell>_cycle_<N>_soc_<X>" -- strip the SOC
+    # suffix first to count unique physical discharge CYCLES (not
+    # cycle x SOC-point combos), then strip the cycle number too for
+    # unique physical CELLS.
+    real_all = features_df[features_df["DataKind"] == "real"]
+    cycle_ids = real_all["Variation_ID"].astype(str).str.split("_soc_").str[0]
+    n_cycles = int(cycle_ids.nunique())
+    n_cells = int(cycle_ids.str.split("_cycle_").str[0].nunique())
+    print(f"\nReal EMPA data used: {n_cells} physical cells, {n_cycles} discharge cycles.")
+
+    existing_results["EMPA"] = {"buckets": bucket_results, "meta": {"n_cells": n_cells, "n_cycles": n_cycles}}
     os.makedirs(os.path.dirname(RESULTS_JSON), exist_ok=True)
     with open(RESULTS_JSON, "w") as f:
         json.dump(existing_results, f, indent=2)
