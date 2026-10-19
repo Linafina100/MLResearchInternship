@@ -53,12 +53,9 @@ def main():
         ax.plot(SOC_START_POINTS, rf_y, color=style["color"], linestyle="-", marker="o",
                 linewidth=2, markersize=6, label=label)
 
-    ax.axhline(50, color="#9AA4AC", linestyle=":", linewidth=1.5, label="chance (50%)")
-
     ax.set_xlabel("Initial SOC (fraction of the cell's own capacity remaining at test time, natural cutoff)")
     ax.set_ylabel("Balanced accuracy (%)")
-    ax.set_title("Per-SOC-specialized Random Forest balanced accuracy vs. starting charge level\n"
-                 "(ratio-to-median scale-invariant feature -- exp07 / EMPA only, SNL excluded)")
+    ax.set_title("Per-SOC Accuracy vs. Initial SOC")
     ax.set_xlim(1.05, 0.0)
     ax.set_ylim(0, 105)
     ax.grid(True, alpha=0.3)
