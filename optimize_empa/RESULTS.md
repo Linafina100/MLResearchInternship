@@ -10,6 +10,14 @@ kept separate from `optimize_empa_2/` (the colleagues' shared pipeline
 -- not ours to restructure) and from `experiments/32_fixed_voltage_cutoff_soc_sweep/`
 (a different, already-concluded campaign on `main`).
 
+**Objective refined after attempt 05**: chasing per-bucket accuracy at
+the lowest possible Initial_SOC was the wrong framing -- the actual
+production need (Stena Recycling: a battery's SOC at test time is
+unknown) is **one model that classifies chemistry correctly regardless
+of what SOC it happens to be tested at**, not a collection of
+SOC-specialized models. Attempts 06-07 pursue that reframed goal
+directly; see below.
+
 ## Data sources
 
 Each attempt's own `data/optimize_empa_low_soc_NN_.../` namespace
@@ -24,6 +32,15 @@ regenerated or modified without touching the colleagues' pipeline.
 (Random Forest and attempt 02 omitted -- see `make_plot.py`'s docstring
 for why: XGBoost dominates at every SOC point tested, and attempt 02's
 XGBoost curve is pixel-identical to attempt 03's.)
+
+**This chart predates attempts 06-07 and is not regenerated here** --
+it documents the per-SOC-specialized era (01-05) specifically,
+including the now-corrected premise that Random Forest underperforms
+XGBoost (see the two sections below). For the current, superseding
+result, see `experiment/06_pooled_model_full_soc_range/outputs/plots/soc_sweep_accuracy_empa.png`
+(RF vs. XGBoost, pooled model) and `experiment/07_mlp_rbf_comparison/outputs/plots/soc_sweep_accuracy_empa.png`
+(adds MLP and an RBF-kernel SVM) -- both show a flat accuracy curve
+across the full SOC range, unlike anything in the chart above.
 
 ## Running log of attempts
 
