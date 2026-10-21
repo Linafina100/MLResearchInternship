@@ -18,7 +18,7 @@ import os
 import pandas as pd
 
 NMC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "..", "..", "DownloadedData", "Dataset_2_NCM_battery")
+                        "..", "..", "..", "DownloadedData", "Dataset_2_NCM_battery")
 NMC_DIR = os.path.normpath(NMC_DIR)
 
 NMC_FILES = ["CY25-05_1-#1.csv", "CY35-05_1-#1.csv", "CY45-05_1-#1.csv"]

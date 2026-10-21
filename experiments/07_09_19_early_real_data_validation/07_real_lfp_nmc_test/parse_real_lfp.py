@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 DESCARGA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "..", "..", "DownloadedData", "ENSAYOSBATERIA", "descargasVF")
+                             "..", "..", "..", "DownloadedData", "ENSAYOSBATERIA", "descargasVF")
 DESCARGA_DIR = os.path.normpath(DESCARGA_DIR)
 
 COLUMNS = ["Voltage [V]", "I_charge_A", "I_discharge_A", "Temperature_C", "Timestamp_s"]
