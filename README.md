@@ -1,10 +1,8 @@
 # MLResearchInternship
 
-This project develops machine learning models to distinguish between two types of lithium ion batteries: LFP and NMC. It uses features extracted from battery discharge curves, based on how voltage changes as capacity decreases ($\mathrm{d}V/\mathrm{d}Q$)
+This project develops machine learning models to distinguish between two types of lithium ion batteries: LFP and NMC. It uses features extracted from battery discharge curves, based on how voltage changes as capacity decreases ($\mathrm{d}V/\mathrm{d}Q$). The main goal is to test how well models trained on simulated battery data can classify real experimental data. Two models are compared: Random Forest and XGBoost. 
 
-The main goal is to test how well models trained on simulated battery data can classify real experimental data. Two models are compared: Random Forest and XGBoost.
-
-The project originally used a GITT pulse discharge method. The main pipeline now simulates continuous constant current discharge, which better reflects how the intended real world testing equipment operates.
+For more details about the project, see Home Wiki (https://github.com/Linafina100/MLResearchInternship/wiki )
 
 ## Repository layout
 
@@ -13,8 +11,8 @@ simulate_batteries.py      # Simulates battery discharge curves using PyBaMM
 feature_engineering.py     # Extracts useful features from discharge curves
 ml_pipeline.py             # Trains and evaluates Random Forest and XGBoost
 data/                      # Raw data and generated outputs (not tracked by Git)
-experiments/               # Numbered experiments testing different approaches
-optimize_empa/             # Ongoing model optimization and pipeline development
+experiments/               # Experiments using several experimental datasets
+optimize_empa/             # Model optimization for EMPA dataset
 ```
 
 ## Main pipeline
@@ -27,7 +25,7 @@ The pipeline can be run from start to finish using three scripts.
 
 Simulates how LFP and NMC batteries discharge using PyBaMM. The simulations vary several battery conditions, including initial state of charge (SOC), state of health (SOH), ambient temperature, and internal resistance.
 
-The default discharge rate is 0.6C. Each simulation runs until the battery reaches its chemistry specific cutoff voltage. The script saves the simulated discharge data and diagnostic plots.
+The simulation discharge rate is 0.1-0.2C. Each simulation runs until the battery reaches its chemistry specific cutoff voltage. The script saves the simulated discharge data and diagnostic plots.
 
 ### 2. `feature_engineering.py`
 
@@ -35,7 +33,7 @@ Processes the discharge curves to extract features describing how voltage change
 
 It calculates ($\mathrm{d}V/\mathrm{d}Q$), which describes how voltage changes relative to the amount of charge discharged. The values are grouped into voltage bins of 0.1 V, creating a consistent set of features for the machine learning models.
 
-Bins that are only reached by one battery chemistry are removed to prevent the models from relying on voltage ranges that would reveal the battery type too easily. See Experiment 01 for more details.
+Bins that are only reached by one battery chemistry are removed to prevent the models from relying on voltage ranges that would reveal the battery type too easily. 
 
 ### 3. `ml_pipeline.py`
 
@@ -76,10 +74,12 @@ See `data/README.md` for an overview of the available data, what each folder con
 
 ## Experiments
 
-The `experiments/` directory contains separate experiments that test different approaches to improving the pipeline. These include changes to the simulation settings, feature engineering, and model performance.
+The `experiments/` directory contains separate experiments that test different approaches to improving the pipeline's ability to generalize to validation with several experimental datasets. These include changes to the simulation settings, feature engineering, and model performance.
 
 Experiments are organized into numbered folders, sometimes grouped by topic. Each experiment contains a `RESULTS.md` file explaining what was tested, what was changed, and what the results showed. Additional scripts contain the code used to run the experiment.
 
 See `experiments/README.md` for an overview of the experiment groups and their purpose.
 
-Experiment numbers may occasionally overlap because different people have created folders independently. Before starting a new experiment, check the existing folders with `ls experiments/` to avoid assigning a number that is already in use.
+## Optimize EMPA
+The `optimize_empa/` directory contains experiments that validates the pipeline using only the EMPA dataset. The EMPA dataset was chosen as validation set because of it consisting of 199 batteries and ?? 
+
