@@ -80,6 +80,10 @@ Experiments are organized into numbered folders, sometimes grouped by topic. Eac
 
 See `experiments/README.md` for an overview of the experiment groups and their purpose.
 
+The best result for generalizing across multiple datasets was obtained in `/experiments/32_fixed_voltage_cutoff_soc_sweep/`
+
 ## Optimize EMPA
-The `optimize_empa/` directory contains experiments that validates the pipeline using only the EMPA dataset. The EMPA dataset was chosen as validation set because of it consisting of 199 batteries and ?? 
+The `optimize_empa/` directory contains experiments that validates the pipeline using only the EMPA dataset. The EMPA dataset was chosen as validation set because of it being the largest data set with 198 batteries and 12,750 cycles. 
+* `optimize_empa/experiment/06_pooled_model_full_soc_range/`: contains the best result for the optimize empa pipeline. See results in home wiki ((https://github.com/Linafina100/MLResearchInternship/wiki )
+* `optimize_empa/experiment/07_mlp_rbf_comparison/`: The previous experiment was further tested out with two other model families. 
 
