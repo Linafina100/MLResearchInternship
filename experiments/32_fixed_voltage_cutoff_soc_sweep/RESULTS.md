@@ -153,10 +153,13 @@ skipped last time.
 | 0.1 | 53.03% | 48.80% | 49.79% |
 | 0.05 | 49.30% | 49.98% | 50.00% |
 
-![Per-SOC accuracy, negative-electrode balance fix](plots/per_soc_accuracy.png)
-
-Legend cell/cycle counts: exp07 (4 cells, 2,360 cycles), EMPA (199
-cells, 35,629 cycles), SNL (43 cells, 808 cycles).
+(exp07: 4 cells, 2,360 cycles; EMPA: 199 cells, 35,629 cycles; SNL: 43
+cells, 808 cycles. The per-SOC-specialized baseline evaluation that
+produced this table -- `evaluation_baseline/` and its plot -- has since
+been removed, superseded by the ratio-to-median stage below and by the
+campaign's later pivot to a pooled, full-SOC-range model in
+`optimize_empa/experiment/06_pooled_model_full_soc_range/`; the numbers
+are kept here as the historical record of what this fix achieved.)
 
 ### EMPA: the fix works, not just at the diagnostic level
 
@@ -395,9 +398,9 @@ corrupted-constant case, just thin) -- still a strong result.
   with the fix (NMC reused unchanged).
 - `combine_lfp_fix_with_baseline_nmc.py` -- concatenates fixed LFP with
   unchanged baseline NMC into `data/32_synthetic_lfp_balance_fix_combined/`.
-- `evaluate_per_soc_point_models.py` -- per-SOC-specialized evaluation,
-  now pointed at the fixed combined synthetic set.
-- `make_per_soc_plot.py` -- the per-SOC accuracy plot above.
+  (The per-SOC-specialized baseline evaluation that originally validated
+  this combined set -- `evaluation_baseline/`, `per_soc_accuracy.png` --
+  has since been removed; see the note after the results table above.)
 - `plot_real_discharge_curves_comparison.py`,
   `plot_average_discharge_curves.py` -- the real-vs-real discharge-curve
   plots above.
@@ -407,8 +410,9 @@ corrupted-constant case, just thin) -- still a strong result.
   investigation above); kept uncommitted/unused in case that direction
   is worth revisiting later, exp07's own high-SOC training-set-size
   problem is still real and not addressed by this fix.
-- `smoke_test_scale_invariant_features.py` -- the Z-score vs.
-  ratio-to-median smoke test (committed separately, earlier branch).
+  (The Z-score vs. ratio-to-median smoke test script and its plots that
+  motivated this choice, `smoke_test_scale_invariant_features.py`, have
+  since been removed -- its findings are summarized in prose above.)
 - `evaluate_per_soc_point_models_ratio_to_median.py` -- the full
   scale-invariant evaluation (exp07/EMPA only), including the
   per-chemistry coverage fix.
