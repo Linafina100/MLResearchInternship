@@ -1,19 +1,18 @@
 # MLResearchInternship
 
-This project develops machine learning models to distinguish between two types of lithium ion batteries: LFP and NMC. It uses features extracted from battery discharge curves, based on how voltage changes as capacity decreases ($\mathrm{d}V/\mathrm{d}Q$). The main goal is to test how well models trained on simulated battery data can classify real experimental data. Two models are compared: Random Forest and XGBoost. 
+This project develops machine learning models to distinguish between two types of lithium-ion batteries: **LFP** (Lithium Iron Phosphate) and **NMC** (Nickel Manganese Cobalt). It uses features extracted from battery discharge curves, based on how voltage changes as capacity decreases ($\mathrm{d}V/\mathrm{d}Q$). The main goal is to test how well models trained on simulated battery data can classify real experimental data. Two models are compared: **Random Forest** and **XGBoost**. 
 
-For more details about the project, see Home Wiki (https://github.com/Linafina100/MLResearchInternship/wiki )
+For more details about the project, see the [Home Wiki](https://github.com/Linafina100/MLResearchInternship/wiki).
 
 ## Repository layout
 
 ```text
-simulate_batteries.py      # Simulates battery discharge curves using PyBaMM
-feature_engineering.py     # Extracts useful features from discharge curves
-ml_pipeline.py             # Trains and evaluates Random Forest and XGBoost
-data/                      # Raw data and generated outputs (not tracked by Git)
-experiments/               # Experiments using several experimental datasets
-optimize_empa/             # Model optimization for EMPA dataset
-```
+├── simulate_batteries.py      # Simulates battery discharge curves using PyBaMM
+├── feature_engineering.py     # Extracts useful features from discharge curves
+├── ml_pipeline.py             # Trains and evaluates Random Forest and XGBoost
+├── data/                      # Raw data and generated outputs
+├── experiments/               # Experiments using several experimental datasets
+└── optimize_empa/             # Model optimization for EMPA dataset
 
 ## Main pipeline
 
@@ -83,7 +82,9 @@ See `experiments/README.md` for an overview of the experiment groups and their p
 The best result for generalizing across multiple datasets was obtained in `/experiments/32_fixed_voltage_cutoff_soc_sweep/`
 
 ## Optimize EMPA
-The `optimize_empa/` directory contains experiments that validates the pipeline using only the EMPA dataset. The EMPA dataset was chosen as validation set because of it being the largest data set with 198 batteries and 12,750 cycles. 
-* `optimize_empa/experiment/06_pooled_model_full_soc_range/`: contains the best result for the optimize empa pipeline. See results in home wiki ((https://github.com/Linafina100/MLResearchInternship/wiki )
-* `optimize_empa/experiment/07_mlp_rbf_comparison/`: The previous experiment was further tested out with two other model families. 
+
+The `optimize_empa/` directory contains experiments that validate the pipeline using only the EMPA dataset. The EMPA dataset was chosen as the validation set because it is the largest dataset available, comprising 198 batteries and 12,750 cycles.
+
+- `optimize_empa/experiment/06_pooled_model_full_soc_range/`: Contains the best result for the optimization pipeline. See results on the [Home Wiki](https://github.com/Linafina100/MLResearchInternship/wiki).
+- `optimize_empa/experiment/07_mlp_rbf_comparison/`: Evaluates the previous configuration further using two alternative model families.
 
