@@ -13,6 +13,7 @@ For more details about the project, see the [Home Wiki](https://github.com/Linaf
 ├── data/                      # Raw data and generated outputs
 ├── experiments/               # Experiments using several experimental datasets
 └── optimize_empa/             # Model optimization for EMPA dataset
+```
 
 ## Main pipeline
 
