@@ -230,7 +230,8 @@ def fit_models(x_train, y_train):
             n_estimators=150, max_depth=10, random_state=42, n_jobs=-1, class_weight='balanced',
         ),
         "XGBoost": XGBClassifier(n_estimators=150, learning_rate=0.08, max_depth=4, subsample=0.8,
-                                  colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1),
+                                  colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1, 
+                                  scale_pos_weight=1, use_label_encoder=False),
     }
     for model in models.values():
         model.fit(x_train, y_train)

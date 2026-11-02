@@ -33,7 +33,7 @@ import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR))))
-EMPA_DIR = os.environ.get("EMPA_DIR", os.path.join(PROJECT_DIR, "data", "Dataset-rocrate"))
+EMPA_DIR = os.environ.get("EMPA_DIR", os.path.join(PROJECT_DIR, "data", "Empa_dataset"))
 
 # Filtering thresholds optimized for low-SOC accuracy (unchanged from main)
 SOH_MIN = float(os.environ.get("SOH_MIN", 0.85))

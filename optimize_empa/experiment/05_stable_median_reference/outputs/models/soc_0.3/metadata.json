@@ -5,7 +5,7 @@
   "is_extrapolation": true,
   "n_train": 498,
   "n_test": 12681,
-  "balanced_accuracy": 0.9942391736193882,
+  "balanced_accuracy": 0.9941994437822805,
   "LFP_recall": 1.0,
-  "NMC_recall": 0.9884783472387764
+  "NMC_recall": 0.988398887564561
 }

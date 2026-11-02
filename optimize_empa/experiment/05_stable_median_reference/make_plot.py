@@ -52,11 +52,11 @@ def main():
     ax.axhline(50, color=COLOR_CHANCE, linestyle=":", linewidth=1.3, zorder=1, label="Random guessing")
 
     ax.plot(soc_pct, nmc, color=COLOR_NMC, linewidth=2.2, marker="o", markersize=6,
-             label="NMC batteries correctly identified", zorder=3)
+             label="XGB: NMC batteries correctly identified", zorder=3)
     ax.plot(soc_pct, lfp, color=COLOR_LFP, linewidth=2.2, marker="o", markersize=6,
-             label="LFP batteries correctly identified", zorder=3)
+             label="XGB: LFP batteries correctly identified", zorder=3)
     ax.plot(soc_pct, overall, color=COLOR_OVERALL, linewidth=3.4, marker="o", markersize=7,
-             label="Overall accuracy", zorder=4)
+             label="XGB: Overall balanced accuracy", zorder=4)
 
     ax.annotate("LFP identified correctly\nat every charge level tested",
                 xy=(30, 100), xytext=(55, 88),
