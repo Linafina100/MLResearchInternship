@@ -106,13 +106,16 @@ SIM_WORKERS = int(os.environ.get("SIM_WORKERS", os.cpu_count() or 1))
 # (unlike the rest-initialized scripts, where a low initial_soc meant
 # spreading the same point count over a much smaller capacity range).
 T_INTERP_N_POINTS = 3000
+# Forcefully anchor DATA_DIR inside the repository's actual data/UU_data folder
+# Simple, direct relative paths from your repository root (MLResearchInternship)
+DATA_DIR = "data/UU_data"
+os.path.join(DATA_DIR, "failures") and os.makedirs(os.path.join(DATA_DIR, "failures"), exist_ok=True)
+os.path.join(DATA_DIR, "plots") and os.makedirs(os.path.join(DATA_DIR, "plots"), exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
-DATA_DIR = os.environ.get("DATA_DIR", os.path.join(PROJECT_DIR, "data", "optimize_empa_low_soc_06_synthetic"))
-RUN_DIR = os.path.join(DATA_DIR)
-OUTPUT_DATA_CSV = os.environ.get("OUTPUT_DATA_CSV", os.path.join(RUN_DIR, "raw", "advanced_synthetic_battery_data.csv"))
-FAILURE_LOG_CSV = os.environ.get("FAILURE_LOG_CSV", os.path.join(RUN_DIR, "failures", "simulation_failures.csv"))
-DISCHARGE_PLOT_PNG = os.environ.get("DISCHARGE_PLOT_PNG", os.path.join(RUN_DIR, "plots", "continuous_discharge_plot.png"))
-
+OUTPUT_DATA_CSV = os.path.join(DATA_DIR, "advanced_synthetic_battery_data.csv")
+FAILURE_LOG_CSV = os.path.join(DATA_DIR, "failures", "simulation_failures.csv")
+DISCHARGE_PLOT_PNG = os.path.join(DATA_DIR, "plots", "continuous_discharge_plot.png")
 
 def capacity_multiplier(base_param_name, target_ah):
     base_capacity_ah = pybamm.ParameterValues(base_param_name)["Nominal cell capacity [A.h]"]

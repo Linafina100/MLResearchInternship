@@ -1,26 +1,15 @@
 """
-Shared Initial_SOC truncation logic for experiment 26 -- factored out of
-build_real_empa_soc_sweep_soh_range.py (where this was first written,
-following experiments/22_29_sim_to_real_validation/23_empa_soc_sweep/build_real_empa_soc_sweep_dataset.py's
-original technique) since identical copies had accumulated in three
-build scripts (EMPA, exp07, CALCE) and a fourth was about to be added for
-the continuous-discharge-truncated synthetic data generator -- one shared
-copy means a fix lands everywhere at once.
+Shared Initial_SOC truncation logic for UU pipeline.
 """
 import numpy as np
 
-MIN_RAW_POINTS_AFTER_TRUNCATION = 5  # need enough raw points left to
-                                      # interpolate/aggregate reliably
+MIN_RAW_POINTS_AFTER_TRUNCATION = 5
 
 
 def truncate_at_soc(t_s, voltage, cap_ah, soc_start, min_raw_points=MIN_RAW_POINTS_AFTER_TRUNCATION):
-    """Keeps only the portion of a full discharge trace (real or
-    synthetic) occurring after (1 - soc_start) of THIS trace's own
-    realized capacity has already been delivered. Time and Capacity are
-    reset to 0 at the new starting point. Does NOT discard a variant for
-    failing to reach any specific voltage zone -- callers use all
-    voltage bins the mutual-coverage filter lets survive, not a
-    hand-picked target zone. Returns None if too few points remain."""
+    """Keeps only the portion of a full discharge trace occurring after
+    (1 - soc_start) of this trace's own realized capacity has already been delivered.
+    Time and Capacity are reset to 0 at the new starting point. Returns None if too few points remain."""
     total_capacity = cap_ah[-1]
     cap_threshold = (1.0 - soc_start) * total_capacity
 

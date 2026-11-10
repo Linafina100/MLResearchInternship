@@ -41,24 +41,25 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
+# Anchor directly to your repository root to prevent nested path bugs
+PROJECT_DIR = "/Users/ellalindgren/Documents/MLResearchInternship"
 
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "pipeline"))
 from feature_engineering import create_features_by_voltage_bins
 
-SYNTHETIC_RAW_CSV = os.environ.get("SYNTHETIC_RAW_CSV", os.path.join(PROJECT_DIR, "data", "optimize_empa_low_soc_06_synthetic", "raw", "advanced_synthetic_battery_data.csv"))
-REAL_RAW_CSV = os.environ.get("REAL_RAW_CSV", os.path.join(PROJECT_DIR, "data", "combined_uu_experimental_data.csv"))
+
+SYNTHETIC_RAW_CSV = os.environ.get("SYNTHETIC_RAW_CSV", os.path.join(PROJECT_DIR, "data", "UU_data", "advanced_synthetic_battery_data.csv"))
+REAL_RAW_CSV = os.environ.get("REAL_RAW_CSV", os.path.join(PROJECT_DIR, "data", "UU_data", "combined_uu_experimental_data.csv"))
 RAW_CSV = os.path.join(SCRIPT_DIR, "outputs", "sim_and_real_raw.csv")
 FEATURES_DIR = os.path.join(SCRIPT_DIR, "outputs", "features")
 RESULTS_JSON = os.path.join(SCRIPT_DIR, "outputs", "sweep_results.json")
 MODELS_DIR = os.path.join(SCRIPT_DIR, "outputs", "models")
+
 SAVE_MODELS = os.environ.get("SAVE_MODELS", "1") not in ("0", "false", "False")
 GROUPBY_COLS = ["Chemistry", "Size_Multiplier", "SOH", "Initial_SOC", "Variation_ID"]
 
-# Standard 12-point grid used throughout this project -- NOT the stray
-# 13-point list (which included an SOC=0.25 that build_real_empa.py never
-# actually produces -- a desync bug already documented and fixed
-# elsewhere in this project; not reintroduced here).
+
+# Standard 12-point grid used throughout this project 
 SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
 
 
@@ -69,7 +70,7 @@ def build_combined_raw_csv():
     sim_df["DataKind"] = "synthetic"
     print(f"  -> {len(sim_df)} rows")
 
-    print(f"\nLoading real EMPA data from '{REAL_RAW_CSV}'...")
+    print(f"\nLoading real UU data from '{REAL_RAW_CSV}'...")
     real_df = pd.read_csv(REAL_RAW_CSV, low_memory=False)
     real_df["DataKind"] = "real"
     print(f"  -> {len(real_df)} rows, {real_df['Variation_ID'].nunique()} real discharge cycles")
@@ -230,13 +231,13 @@ def main():
     cycle_ids = real_all["Variation_ID"].astype(str).str.split("_soc_").str[0]
     n_cycles = int(cycle_ids.nunique())
     n_cells = int(cycle_ids.str.split("_cycle_").str[0].nunique())
-    print(f"\nReal EMPA data used: {n_cells} physical cells, {n_cycles} discharge cycles.")
+    print(f"\nReal UU data used: {n_cells} physical cells, {n_cycles} discharge cycles.")
 
-    existing_results["EMPA"] = {"buckets": bucket_results, "meta": {"n_cells": n_cells, "n_cycles": n_cycles}}
+    existing_results["UU"] = {"buckets": bucket_results, "meta": {"n_cells": n_cells, "n_cycles": n_cycles}}
     os.makedirs(os.path.dirname(RESULTS_JSON), exist_ok=True)
     with open(RESULTS_JSON, "w") as f:
         json.dump(existing_results, f, indent=2)
-    print(f"\nSaved EMPA sweep results to '{RESULTS_JSON}'")
+    print(f"\nSaved UU sweep results to '{RESULTS_JSON}'")
 
 
 if __name__ == "__main__":
