@@ -1,0 +1,178 @@
+{
+  "UU": {
+    "buckets": {
+      "1.0": {
+        "Random Forest": {
+          "n": 1016,
+          "balanced_accuracy": 0.9251968503937008,
+          "LFP_recall": 0.9251968503937008,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 1016,
+          "balanced_accuracy": 0.9271653543307087,
+          "LFP_recall": 0.9271653543307087,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.9": {
+        "Random Forest": {
+          "n": 962,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 962,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.8": {
+        "Random Forest": {
+          "n": 629,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 629,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.7": {
+        "Random Forest": {
+          "n": 851,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 851,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.6": {
+        "Random Forest": {
+          "n": 867,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 867,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.5": {
+        "Random Forest": {
+          "n": 720,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 720,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.4": {
+        "Random Forest": {
+          "n": 814,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 814,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.3": {
+        "Random Forest": {
+          "n": 525,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 525,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.2": {
+        "Random Forest": {
+          "n": 78,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 78,
+          "balanced_accuracy": 1.0,
+          "LFP_recall": 1.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.15": {
+        "Random Forest": {
+          "n": 407,
+          "balanced_accuracy": 0.5271087322826842,
+          "LFP_recall": 0.288135593220339,
+          "NMC_recall": 0.7660818713450293
+        },
+        "XGBoost": {
+          "n": 407,
+          "balanced_accuracy": 0.5095648726335613,
+          "LFP_recall": 0.288135593220339,
+          "NMC_recall": 0.7309941520467836
+        }
+      },
+      "0.1": {
+        "Random Forest": {
+          "n": 1942,
+          "balanced_accuracy": 0.4129600390102221,
+          "LFP_recall": 0.04655674102812803,
+          "NMC_recall": 0.7793633369923162
+        },
+        "XGBoost": {
+          "n": 1942,
+          "balanced_accuracy": 0.4338801223541136,
+          "LFP_recall": 0.04558680892337536,
+          "NMC_recall": 0.8221734357848518
+        }
+      },
+      "0.05": {
+        "Random Forest": {
+          "n": 1868,
+          "balanced_accuracy": 0.48655965808669943,
+          "LFP_recall": 0.050724637681159424,
+          "NMC_recall": 0.9223946784922394
+        },
+        "XGBoost": {
+          "n": 1868,
+          "balanced_accuracy": 0.4759173311665358,
+          "LFP_recall": 0.053830227743271224,
+          "NMC_recall": 0.8980044345898004
+        }
+      }
+    },
+    "meta": {
+      "n_cells": 156,
+      "n_cycles": 2038
+    }
+  }
+}
