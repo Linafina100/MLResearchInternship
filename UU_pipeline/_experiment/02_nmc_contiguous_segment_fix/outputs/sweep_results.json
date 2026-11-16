@@ -1,0 +1,190 @@
+{
+  "UU": {
+    "buckets": {
+      "1.0": {
+        "Random Forest": {
+          "n": 1602,
+          "n_lfp": 1602,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 1602,
+          "n_lfp": 1602,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.9": {
+        "Random Forest": {
+          "n": 1586,
+          "n_lfp": 1586,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 1586,
+          "n_lfp": 1586,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.8": {
+        "Random Forest": {
+          "n": 1572,
+          "n_lfp": 1572,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 1572,
+          "n_lfp": 1572,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.7": {
+        "Random Forest": {
+          "n": 1492,
+          "n_lfp": 1492,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 1492,
+          "n_lfp": 1492,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.6": {
+        "Random Forest": {
+          "n": 1290,
+          "n_lfp": 1290,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 1290,
+          "n_lfp": 1290,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.5": {
+        "Random Forest": {
+          "n": 765,
+          "n_lfp": 765,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 765,
+          "n_lfp": 765,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.4": {
+        "Random Forest": {
+          "n": 59,
+          "n_lfp": 59,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 59,
+          "n_lfp": 59,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.3": {
+        "Random Forest": {
+          "n": 22,
+          "n_lfp": 22,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 22,
+          "n_lfp": 22,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.2": {
+        "Random Forest": {
+          "n": 20,
+          "n_lfp": 20,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 20,
+          "n_lfp": 20,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      },
+      "0.15": {
+        "Random Forest": {
+          "n": 20,
+          "n_lfp": 20,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        },
+        "XGBoost": {
+          "n": 20,
+          "n_lfp": 20,
+          "n_nmc": 0,
+          "balanced_accuracy": 0.0,
+          "LFP_recall": 0.0,
+          "NMC_recall": 0.0
+        }
+      }
+    },
+    "meta": {
+      "n_cells": 56,
+      "n_cycles": 1602
+    }
+  }
+}

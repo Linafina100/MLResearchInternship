@@ -1,0 +1,10 @@
+{
+  "bin_cols": [
+    "dV_dSOC_V_3.1_3.0",
+    "dV_dSOC_V_3.0_2.9",
+    "dV_dSOC_V_2.9_2.8",
+    "dV_dSOC_V_2.8_2.7",
+    "dV_dSOC_V_2.7_2.6",
+    "dV_dSOC_V_2.6_2.5"
+  ]
+}

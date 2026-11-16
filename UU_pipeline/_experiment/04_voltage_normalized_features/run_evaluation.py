@@ -1,0 +1,234 @@
+"""
+experiment 04: re-runs the UU pooled-model SOC sweep with BOTH axes
+normalized -- capacity -> SOC fraction (experiment 03) and voltage ->
+per-battery voltage fraction (new here, see pipeline/feature_engineering.py
+for why) -- on top of experiment 02's NMC-contiguous-segment-fixed real
+data, with experiment 02's Battery_ID sort=False fix carried forward.
+
+Usage: python3 UU_pipeline/_experiment/04_voltage_normalized_features/run_evaluation.py
+"""
+import matplotlib
+matplotlib.use("Agg")
+
+import json
+import os
+import sys
+
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import balanced_accuracy_score, recall_score
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from xgboost import XGBClassifier
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
+
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "pipeline"))
+from feature_engineering import create_features_by_voltage_bins
+
+
+SYNTHETIC_RAW_CSV = os.environ.get(
+    "SYNTHETIC_RAW_CSV",
+    os.path.join(PROJECT_DIR, "data", "UU_data", "01_simulated_soh_match_advanced_synthetic_battery_data.csv"),
+)
+REAL_RAW_CSV = os.environ.get(
+    "REAL_RAW_CSV",
+    os.path.join(SCRIPT_DIR, "..", "02_nmc_contiguous_segment_fix", "outputs", "combined_uu_experimental_data_fixed.csv"),
+)
+RAW_CSV = os.path.join(SCRIPT_DIR, "outputs", "sim_and_real_raw.csv")
+FEATURES_DIR = os.path.join(SCRIPT_DIR, "outputs", "features")
+RESULTS_JSON = os.path.join(SCRIPT_DIR, "outputs", "sweep_results.json")
+MODELS_DIR = os.path.join(SCRIPT_DIR, "outputs", "models")
+
+SAVE_MODELS = os.environ.get("SAVE_MODELS", "1") not in ("0", "false", "False")
+GROUPBY_COLS = ["Chemistry", "Size_Multiplier", "SOH", "Initial_SOC", "Variation_ID"]
+
+
+SOC_START_POINTS = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.15, 0.1, 0.05]
+
+
+def build_combined_raw_csv():
+    os.makedirs(os.path.dirname(RAW_CSV), exist_ok=True)
+    print(f"Loading synthetic data from '{SYNTHETIC_RAW_CSV}'...")
+    sim_df = pd.read_csv(SYNTHETIC_RAW_CSV)
+    sim_df["DataKind"] = "synthetic"
+    print(f"  -> {len(sim_df)} rows")
+
+    print(f"\nLoading fixed real UU data from '{REAL_RAW_CSV}'...")
+    real_df = pd.read_csv(REAL_RAW_CSV, low_memory=False)
+    real_df["DataKind"] = "real"
+    print(f"  -> {len(real_df)} rows, {real_df['Variation_ID'].nunique()} real discharge/pulse segments")
+
+    combined = pd.concat([sim_df, real_df], ignore_index=True)
+    combined.to_csv(RAW_CSV, index=False)
+    print(f"\nCombined raw data saved to '{RAW_CSV}': "
+          f"{(combined['DataKind'] == 'synthetic').sum()} synthetic rows, "
+          f"{(combined['DataKind'] == 'real').sum()} real rows")
+    return combined
+
+
+def extract_features_with_kind():
+    if not os.path.exists(RAW_CSV):
+        build_combined_raw_csv()
+    else:
+        print(f"Note: '{RAW_CSV}' already exists -- reusing it. Delete it to re-build from source.")
+
+    print("\nExtracting SOC-normalized features (exclude_final_transition=True, "
+          ">=20% mutual-coverage filter, no target-zone restriction)...")
+    features_df = create_features_by_voltage_bins(RAW_CSV, output_dir=FEATURES_DIR, exclude_final_transition=True)
+
+    raw_df = pd.read_csv(RAW_CSV, low_memory=False)
+    # Must match create_features_by_voltage_bins' own Battery_ID numbering
+    # exactly (sort=False there) -- see experiment 02's fix for why.
+    raw_df["Battery_ID"] = raw_df.groupby(GROUPBY_COLS, sort=False).ngroup()
+    id_cols = raw_df.drop_duplicates("Battery_ID").set_index("Battery_ID")[["DataKind", "Initial_SOC", "Variation_ID"]]
+    features_df["DataKind"] = features_df["Battery_ID"].map(id_cols["DataKind"])
+    features_df["Initial_SOC"] = features_df["Battery_ID"].map(id_cols["Initial_SOC"])
+    features_df["Variation_ID"] = features_df["Battery_ID"].map(id_cols["Variation_ID"])
+
+    all_bin_cols = sorted(
+        (c for c in features_df.columns if c.startswith("dV_dSOC_Vfrac_")),
+        key=lambda c: -float(c.split("_")[3]),
+    )
+    print(f"\nSurviving bins across the full voltage span ({len(all_bin_cols)}): {all_bin_cols}")
+    print(features_df.groupby(["DataKind", "Chemistry"]).size().rename("n_batteries"))
+    return features_df, all_bin_cols
+
+
+def fit_models(X_train_s, y_train):
+    models = {
+        "Random Forest": RandomForestClassifier(n_estimators=150, max_depth=10, random_state=42, n_jobs=-1),
+        "XGBoost": XGBClassifier(n_estimators=150, learning_rate=0.08, max_depth=4, subsample=0.8,
+                                  colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1),
+    }
+    for model in models.values():
+        model.fit(X_train_s, y_train)
+    return models
+
+
+def evaluate_bucket(models, imputer, scaler, le, lower, upper, real_bucket_df, feature_cols):
+    X_test = real_bucket_df[feature_cols].replace([np.inf, -np.inf], np.nan)
+    y_test = le.transform(real_bucket_df["Chemistry"])
+
+    X_test_c = X_test.clip(lower=lower, upper=upper, axis=1)
+    X_test_i = imputer.transform(X_test_c)
+    X_test_s = scaler.transform(X_test_i)
+
+    n_lfp = int((real_bucket_df["Chemistry"] == "LFP").sum())
+    n_nmc = int((real_bucket_df["Chemistry"] == "NMC").sum())
+
+    out = {}
+    for name, model in models.items():
+        preds = model.predict(X_test_s)
+        recalls = recall_score(y_test, preds, average=None, labels=[0, 1], zero_division=0)
+        out[name] = {
+            "n": int(len(real_bucket_df)),
+            "n_lfp": n_lfp,
+            "n_nmc": n_nmc,
+            "balanced_accuracy": float(balanced_accuracy_score(y_test, preds)),
+            "LFP_recall": float(recalls[0]),
+            "NMC_recall": float(recalls[1]),
+        }
+    return out
+
+
+def save_models(models, imputer, scaler, le, lower, upper, bin_cols):
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    for name, model in models.items():
+        fname = "random_forest.joblib" if name == "Random Forest" else "xgboost.joblib"
+        joblib.dump(model, os.path.join(MODELS_DIR, fname))
+    joblib.dump(scaler, os.path.join(MODELS_DIR, "scaler.joblib"))
+    joblib.dump(imputer, os.path.join(MODELS_DIR, "imputer.joblib"))
+    joblib.dump(le, os.path.join(MODELS_DIR, "label_encoder.joblib"))
+    with open(os.path.join(MODELS_DIR, "feature_names.json"), "w") as f:
+        json.dump({"bin_cols": list(bin_cols)}, f, indent=2)
+    with open(os.path.join(MODELS_DIR, "clip_bounds.json"), "w") as f:
+        json.dump({"lower": lower.to_dict(), "upper": upper.to_dict()}, f, indent=2)
+    print(f"Saved both models + shared preprocessing -> '{MODELS_DIR}'")
+
+
+def main():
+    features_df, bin_cols = extract_features_with_kind()
+
+    if not bin_cols:
+        print("\nNo surviving bins -- cannot train. Stopping here.")
+        return
+
+    synth_df = features_df[features_df["DataKind"] == "synthetic"]
+    print(f"\n{'=' * 70}\nTraining once on the full pooled synthetic set "
+          f"({len(synth_df)} batteries, Initial_SOC {synth_df['Initial_SOC'].min():.2f}-"
+          f"{synth_df['Initial_SOC'].max():.2f}) using all {len(bin_cols)} surviving bins.\n{'=' * 70}")
+
+    X_train = synth_df[bin_cols].replace([np.inf, -np.inf], np.nan)
+    le = LabelEncoder()
+    y_train = le.fit_transform(synth_df["Chemistry"])
+    print(f"Target classes mapped: {dict(zip(le.classes_, le.transform(le.classes_)))}")
+
+    lower, upper = X_train.quantile(0.01), X_train.quantile(0.99)
+    X_train_c = X_train.clip(lower=lower, upper=upper, axis=1)
+    imputer = SimpleImputer(strategy="median")
+    X_train_i = imputer.fit_transform(X_train_c)
+    scaler = StandardScaler()
+    X_train_s = scaler.fit_transform(X_train_i)
+
+    models = fit_models(X_train_s, y_train)
+
+    if SAVE_MODELS:
+        save_models(models, imputer, scaler, le, lower, upper, bin_cols)
+
+    print(f"\n{'=' * 70}\nEvaluating per Initial_SOC bucket\n{'=' * 70}")
+    bucket_results = {}
+    for soc in SOC_START_POINTS:
+        real_bucket = features_df[(features_df.DataKind == "real") & (features_df.Initial_SOC == soc)]
+        if len(real_bucket) == 0:
+            print(f"\n--- Initial_SOC={soc}: no surviving real batteries, skipped ---")
+            continue
+
+        result = evaluate_bucket(models, imputer, scaler, le, lower, upper, real_bucket, bin_cols)
+        bucket_results[str(soc)] = result
+        n_lfp = result["Random Forest"]["n_lfp"]
+        n_nmc = result["Random Forest"]["n_nmc"]
+        print(f"\n--- Initial_SOC={soc} --- n={len(real_bucket)} ({n_lfp} LFP + {n_nmc} NMC)")
+        for model_name, r in result.items():
+            print(f"  {model_name:<15} balanced={r['balanced_accuracy']*100:.2f}%  "
+                  f"LFP_recall={r['LFP_recall']:.3f}  NMC_recall={r['NMC_recall']:.3f}")
+
+    print(f"\n{'=' * 70}\n=== SWEEP SUMMARY ===\n{'=' * 70}")
+    print(f"Bins used ({len(bin_cols)}): {bin_cols}\n")
+    header = (f"{'Initial_SOC':<12}{'n':<10}{'n_lfp':<8}{'n_nmc':<8}{'RF balanced':<14}{'RF LFP rec':<12}{'RF NMC rec':<12}"
+              f"{'XGB balanced':<14}{'XGB LFP rec':<12}{'XGB NMC rec':<12}")
+    print(header)
+    for soc in SOC_START_POINTS:
+        s_str = str(soc)
+        if s_str not in bucket_results:
+            continue
+        rf, xgb = bucket_results[s_str]["Random Forest"], bucket_results[s_str]["XGBoost"]
+        print(f"{soc:<12}{rf['n']:<10}{rf['n_lfp']:<8}{rf['n_nmc']:<8}{rf['balanced_accuracy']*100:<14.2f}{rf['LFP_recall']:<12.3f}"
+              f"{rf['NMC_recall']:<12.3f}{xgb['balanced_accuracy']*100:<14.2f}{xgb['LFP_recall']:<12.3f}{xgb['NMC_recall']:<12.3f}")
+
+    existing_results = {}
+    if os.path.exists(RESULTS_JSON):
+        try:
+            with open(RESULTS_JSON, "r") as f:
+                existing_results = json.load(f)
+        except Exception as e:
+            print(f"Note: Could not parse existing '{RESULTS_JSON}' ({e}). Rebuilding.")
+
+    real_all = features_df[features_df["DataKind"] == "real"]
+    cycle_ids = real_all["Variation_ID"].astype(str).str.split("_soc_").str[0]
+    n_cycles = int(cycle_ids.nunique())
+    n_cells = int(cycle_ids.str.split("_cycle_").str[0].nunique())
+    print(f"\nReal UU data used: {n_cells} physical cells, {n_cycles} discharge/pulse segments.")
+
+    existing_results["UU"] = {"buckets": bucket_results, "meta": {"n_cells": n_cells, "n_cycles": n_cycles}}
+    os.makedirs(os.path.dirname(RESULTS_JSON), exist_ok=True)
+    with open(RESULTS_JSON, "w") as f:
+        json.dump(existing_results, f, indent=2)
+    print(f"\nSaved UU sweep results to '{RESULTS_JSON}'")
+
+
+if __name__ == "__main__":
+    main()
